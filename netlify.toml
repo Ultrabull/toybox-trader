@@ -1,0 +1,17 @@
+# Netlify build settings for Toybox Trader.
+# On every push to the connected branch, Netlify runs this build and
+# publishes the resulting HTML bundle from dist/.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Single-page app: serve index.html for any path so refreshes and deep
+# links don't 404.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
