@@ -1,0 +1,2876 @@
+import { useState, useEffect, useRef } from "react";
+
+// ─── Constants ─────────────────────────────────────
+const AVATARS = ["🚀","🦁","⚡","🐉","🦊","🐼","🦋","🎮","🏆","🌟","🦅","🐯","🐬","🦄","🐸","🎸","🧙","🎯","🐺","🦈"];
+const THEMES  = [
+  {id:"space",  label:"Cosmic Space",     bg:"linear-gradient(160deg,#0d0621 0%,#1a0e3a 50%,#080c14 100%)", accent:"#7c3aed", card:"rgba(124,58,237,.12)"},
+  {id:"forest", label:"Enchanted Forest", bg:"linear-gradient(160deg,#021a0e 0%,#052e16 50%,#021a0e 100%)", accent:"#10b981", card:"rgba(16,185,129,.12)"},
+  {id:"neon",   label:"Neon Cyberpunk",   bg:"linear-gradient(160deg,#050014 0%,#120030 50%,#050014 100%)", accent:"#06b6d4", card:"rgba(6,182,212,.12)"},
+  {id:"ocean",  label:"Underwater World", bg:"linear-gradient(160deg,#050f2e 0%,#0c2a4a 50%,#050f2e 100%)", accent:"#38bdf8", card:"rgba(56,189,248,.12)"},
+];
+const PIN_CORRECT = "1234";
+const genCode = () => Math.floor(100000 + Math.random()*900000).toString();
+
+// ─── Sound + haptic feedback (kid engagement) ───
+let _audioCtx = null;
+const playSound = (type) => {
+  try {
+    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _audioCtx;
+    const now = ctx.currentTime;
+    const notes = {
+      buy:    [523, 659, 784],   // happy ascending chime
+      sell:   [784, 659, 523],   // descending
+      coin:   [988, 1319],       // bright coin ping
+      reward: [523, 659, 784, 1047], // fanfare
+      correct:[659, 880],        // ding ding
+      wrong:  [220, 165],        // low buzz
+      tap:    [440],             // soft tick
+    }[type] || [440];
+    notes.forEach((freq, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type === "wrong" ? "sawtooth" : "sine";
+      o.frequency.value = freq;
+      o.connect(g); g.connect(ctx.destination);
+      const start = now + i * 0.09;
+      g.gain.setValueAtTime(0, start);
+      g.gain.linearRampToValueAtTime(0.18, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.22);
+      o.start(start); o.stop(start + 0.24);
+    });
+  } catch(e) {}
+};
+const haptic = (ms = 12) => { try { navigator.vibrate && navigator.vibrate(ms); } catch(e) {} };
+const fx = (type, ms) => { playSound(type); haptic(ms); };
+
+// ─── US stock market hours (real Eastern Time) ───
+// Returns {open:boolean, label, nextOpenText}. Crypto ignores this (24/7).
+const getMarketStatus = () => {
+  try {
+    // Convert 'now' to US Eastern time
+    const now = new Date();
+    const et = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
+    const day = et.getDay();           // 0=Sun, 6=Sat
+    const mins = et.getHours()*60 + et.getMinutes();
+    const openMins = 9*60+30;          // 9:30am ET
+    const closeMins = 16*60;           // 4:00pm ET
+    const isWeekday = day>=1 && day<=5;
+    const isOpen = isWeekday && mins>=openMins && mins<closeMins;
+    let nextOpenText = "Mon 9:30am ET";
+    if(isWeekday && mins<openMins) nextOpenText = "today 9:30am ET";
+    else if(isWeekday && mins>=closeMins && day<5) nextOpenText = "tomorrow 9:30am ET";
+    else if(day===5 && mins>=closeMins) nextOpenText = "Monday 9:30am ET";
+    else if(day===6) nextOpenText = "Monday 9:30am ET";
+    else if(day===0) nextOpenText = "Monday 9:30am ET";
+    else if(isWeekday && mins<openMins) nextOpenText = "today 9:30am ET";
+    return {open:isOpen, etTime:et, nextOpenText};
+  } catch(e) { return {open:true, nextOpenText:""}; }
+};
+
+// ─── Persistent storage helpers (survive app close) ───
+const KIDS_KEY = "toybox:kids:registry";
+const stateKey = id => `toybox:kid:${id}:state`;
+const saveData = async (key,value) => { try{ await window.storage.set(key,JSON.stringify(value),false); }catch(e){} };
+const loadData = async (key) => { try{ const r=await window.storage.get(key,false); return r?JSON.parse(r.value):null; }catch(e){ return null; } };
+
+// ─── Backup / Restore (protects against browser data loss) ───
+// Encodes a kid's full account + progress into a short shareable code.
+const makeBackupCode = (account, state) => {
+  try {
+    const payload = {v:1, account, state, savedAt:Date.now()};
+    return "TBX-" + btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  } catch(e){ return null; }
+};
+const readBackupCode = (code) => {
+  try {
+    const raw = code.trim().replace(/^TBX-/, "");
+    const payload = JSON.parse(decodeURIComponent(escape(atob(raw))));
+    if(payload && payload.account) return payload;
+    return null;
+  } catch(e){ return null; }
+};
+const f$  = n => `$${Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+const fs$ = n => n>=1000 ? `$${(n/1000).toFixed(1)}k` : `$${Number(n).toFixed(2)}`;
+const pct = (a,b) => (((a-b)/b)*100).toFixed(1);
+const toRobux = d => Math.round(d*10).toLocaleString();
+
+// ─── Market data ───────────────────────────────────
+const MARKET = [
+  {ticker:"AAPL",name:"Apple",   type:"stock", basePrice:195.40,icon:"🍎",color:"#6366f1",
+   tagline:"Makes iPhones — billions sold every year",risk:"low",
+   kidEx:"Apple is like the most popular kid at school. Every iPhone your parents buy makes Apple richer — and you too if you own a block!",
+   news:"📱 iPhone 16 launched! Massive lines outside stores worldwide.",newsGood:true,trend:"up"},
+  {ticker:"RBLX",name:"Roblox",  type:"stock", basePrice:51.30, icon:"🎮",color:"#ec4899",
+   tagline:"70 million kids play this every single day",risk:"medium",
+   kidEx:"Every time someone buys Robux, Roblox earns money. Own a block and get a tiny slice of every Robux purchase!",
+   news:"🎮 Roblox hit 71 million daily players — biggest ever!",newsGood:true,trend:"up"},
+  {ticker:"DIS", name:"Disney",  type:"stock", basePrice:89.20, icon:"🏰",color:"#8b5cf6",
+   tagline:"Owns Marvel, Star Wars, Frozen & Disney+",risk:"low",
+   kidEx:"Disney owns almost every movie you love. Every cinema ticket and Disney+ subscription earns them money!",
+   news:"🎬 New Marvel movie broke box office records on opening weekend!",newsGood:true,trend:"flat"},
+  {ticker:"NVDA",name:"Nvidia",  type:"stock", basePrice:875.50,icon:"🖥️",color:"#10b981",
+   tagline:"Their chips power every video game AND every AI",risk:"medium",
+   kidEx:"Your PS5, Xbox and every AI chatbot runs on Nvidia chips. They power gaming AND AI!",
+   news:"🤖 Every major AI company ordered billions of Nvidia chips!",newsGood:true,trend:"up"},
+  {ticker:"BTC", name:"Bitcoin", type:"crypto",basePrice:67400, icon:"₿", color:"#f59e0b",
+   tagline:"Only 21 million ever — like limited Pokémon cards",risk:"high",
+   kidEx:"Only 21 million Bitcoins will EVER exist. Like a limited holographic Pokémon card — if everyone wants it, price goes up!",
+   news:"⚠️ Bitcoin dropped 12% then bounced 8%. Very volatile this week!",newsGood:false,trend:"volatile"},
+  {ticker:"ETH", name:"Ethereum",type:"crypto",basePrice:3540,  icon:"⟠",color:"#06b6d4",
+   tagline:"Digital money that runs thousands of apps",risk:"high",
+   kidEx:"Ethereum is like Roblox's currency system but for the whole internet. More apps = more demand!",
+   news:"⚠️ Ethereum fell 10% this week. Crypto markets very shaky.",newsGood:false,trend:"volatile"},
+];
+const INIT_PRICES = {AAPL:195.40,RBLX:51.30,DIS:89.20,NVDA:875.50,BTC:67400,ETH:3540};
+
+// ─── Lessons with adventure map ────────────────────
+const LESSONS = [
+  {id:"investing",icon:"🍋",title:"What is Investing?",color:"#6366f1",cashReward:50,island:"Lemonade Island",
+   slides:[
+    {icon:"🍋",title:"The Lemonade Stand Lesson",body:"Your friend opens a lemonade stand for $10. She lets you invest $5 to own half. Every dollar it earns, you get 50 cents back. That's investing — your money works FOR you!",example:"💡 Stand earns $20 on Saturday → your $5 earns $10 back. That's doubling your money in ONE day!"},
+    {icon:"🍎",title:"Apple is just a HUGE lemonade stand",body:"Apple works exactly the same — except instead of lemonade, they sell iPhones. Buy 1 Apple Building Block and you become one of billions of tiny owners!",example:"💡 If Apple earns more money this year, your block is worth MORE. You profit without doing any work!"},
+    {icon:"⏳",title:"Time is your superpower",body:"$100 in Apple in 2014 → $1,100+ today. No work. Just patience. The best investors wait while companies grow.",example:"💡 This is called compound growth. Your money earns money, which earns more money. It snowballs!"},
+  ],
+   quiz:[
+    {q:"What does it mean to 'invest' in a company?",opts:["You give them money for free","You own a tiny piece and share in the profits","You borrow money from them","You work there"],correct:1,why:"Investing means buying a piece of a company. When it does well, your piece is worth more!"},
+    {q:"In the lemonade stand example, if you own half and it earns $20, how much is yours?",opts:["$20","$5","$10","Nothing"],correct:2,why:"You own HALF, so you get half of $20 = $10! Your money worked for you."},
+   ],},
+  {id:"when_buy",icon:"🛍️",title:"When to Buy?",color:"#10b981",cashReward:75,island:"Sale Island",
+   slides:[
+    {icon:"🛍️",title:"Buying on sale",body:"Your favourite game is $60. On sale for $40. You'd buy it immediately! Smart investors do the same — a temporary dip on a GOOD company is a SALE!",example:"💡 Apple drops to $170 for one slow week. Smart investors buy knowing it'll recover!"},
+    {icon:"🧺",title:"Never put all eggs in one basket",body:"10 Easter eggs in one basket. Dog knocks it over — you lose ALL 10. But 5 baskets with 2 eggs each? Dog only gets 2!",example:"💡 Own 4-5 different assets. If one crashes, others protect you. This is called diversification!"},
+  ],
+   quiz:[
+    {q:"When is often a SMART time to buy a good company's stock?",opts:["When everyone is panicking and the price dipped","When the price is at its highest ever","Never","Only on weekends"],correct:0,why:"A temporary dip on a GOOD company is like a sale — smart investors buy the discount!"},
+    {q:"Why should you own 4-5 different assets instead of just one?",opts:["It looks cooler","To confuse people","If one crashes, the others protect you","There's no reason"],correct:2,why:"That's diversification! Like eggs in different baskets — if one breaks, you still have the others."},
+   ],},
+  {id:"when_sell",icon:"💰",title:"When to Sell?",color:"#ec4899",cashReward:75,island:"Profit Peak",
+   slides:[
+    {icon:"🃏",title:"The Pokémon card moment",body:"Charizard bought at $50, now worth $80. Sell NOW to lock in $30 real profit. Wait and the hype might die, dropping it back to $55!",example:"💡 Profit is only REAL when you sell. Until then it's a number that can go back down!"},
+    {icon:"🧘",title:"Don't panic sell",body:"Apple dropped 20%+ eight times since 2010. Every single time it came back higher. Panic sellers lost money. Patient holders won.",example:"💡 Like deleting your Roblox account during a server outage. Then it came back. Oops!"},
+  ],
+   quiz:[
+    {q:"When does your profit become REAL money?",opts:["When the price goes up on screen","Only when you SELL","When you tell your friends","Never"],correct:1,why:"Profit is only real when you sell! Until then it's just a number that can still go down."},
+    {q:"A stock you own drops 10% in one day. What's usually the SMART move?",opts:["Panic and sell everything","Stay calm — good companies usually bounce back","Buy a lottery ticket","Delete the app"],correct:1,why:"Don't panic sell! Good companies have dropped many times and always came back higher."},
+   ],},
+  {id:"crypto",icon:"🃏",title:"Crypto Explained",color:"#f59e0b",cashReward:50,island:"Crypto Cove",
+   slides:[
+    {icon:"🃏",title:"Limited edition trading cards",body:"Only 21 million Bitcoins exist EVER. If a billion people want it and only 21 million exist — price rockets. If people lose interest — it crashes. Like rare Pokémon cards!",example:"💡 Your holographic Charizard is worth $200 because people BELIEVE it's rare. Bitcoin works the same way!"},
+    {icon:"⚖️",title:"The 10% rule",body:"Never put more than 10% of your garden in crypto. With $1,000 that's $100 maximum. No matter how excited you feel!",example:"💡 You wouldn't put all your birthday money on ONE scratch card. Crypto = scratch card of investing!"},
+  ],
+   quiz:[
+    {q:"Why can crypto prices crash so fast?",opts:["Because it's based on what people believe, not real products","Because computers are slow","Because it's illegal","It never crashes"],correct:0,why:"Crypto value comes from belief and demand — when confidence drops, the price can crash fast!"},
+    {q:"What's the maximum % of your money experts say to put in crypto?",opts:["100%","50%","10%","All of it"],correct:2,why:"The 10% rule! Never risk more than 10% on something this unpredictable."},
+   ],},
+  {id:"charts",icon:"📊",title:"Reading Charts",color:"#06b6d4",cashReward:100,island:"Chart Island",
+   slides:[
+    {icon:"📊",title:"What is a price chart?",body:"A chart shows how a stock changed over time. Like plotting your weekly quiz scores — it shows if you're improving or getting worse!",example:"💡 Scores: 60, 65, 70, 75 = upward trend. Stocks have trends too!"},
+    {icon:"🕯️",title:"Green and red candles",body:"Each candle = ONE day. GREEN = price finished HIGHER (good day 📈). RED = price finished LOWER (bad day 📉). Thin lines show highest and lowest points.",example:"💡 Five green candles in a row = up 5 straight days. Strong momentum!"},
+    {icon:"🛹",title:"Support — the trampoline",body:"A price the stock keeps BOUNCING back from when it dips. Like a trampoline floor. Break THROUGH support? Danger sign!",example:"💡 Apple keeps bouncing at $180. That's support! Smart traders buy near support."},
+    {icon:"〰️",title:"Moving averages",body:"Average price of the last 20 days. Smooths out daily noise. Price ABOVE it = healthy. BELOW it = be careful!",example:"💡 Price crosses ABOVE the moving average = many traders see it as a buy signal!"},
+  ],
+   quiz:[
+    {q:"On a price chart, what does a GREEN candle mean?",opts:["The price finished LOWER that day","The price finished HIGHER that day","The stock is broken","Time to sell"],correct:1,why:"Green = price finished higher than it started = a good day! Red means it finished lower."},
+    {q:"What is 'support' on a chart?",opts:["A price the stock keeps bouncing back up from","A customer service line","The highest price ever","A type of crypto"],correct:0,why:"Support is like a trampoline floor — a price level the stock keeps bouncing back up from!"},
+   ],},
+  {id:"options",icon:"🎁",title:"Options Trading",color:"#8b5cf6",cashReward:150,island:"Options Outpost",
+   slides:[
+    {icon:"🎁",title:"The toy reservation",body:"PS6 isn't out yet but you pay $20 NOW to reserve one at today's $400 price. Next month it costs $600 — you still get it for $400!",example:"💡 You paid $20 (premium) to lock in $400 (strike price). PS6 hits $600 → you made $180 profit from a $20 bet!"},
+    {icon:"📈",title:"Call options — betting UP",body:"CALL option = right to BUY at a locked price. Apple at $195, you buy a call at $200 for $5. Apple hits $230 — your $5 call could be worth $30+!",example:"💡 500%+ return on your $5 bet! But ONLY if you're right about direction AND timing."},
+    {icon:"📉",title:"Put options — protection",body:"PUT option = right to SELL at a locked price. Like insurance! Own Apple, scared it might crash? Buy a put at $190. If Apple drops to $150, your put gains value!",example:"💡 Even Warren Buffett uses puts to protect his billions. Smart risk management!"},
+    {icon:"⚠️",title:"Options expire — they go to ZERO!",body:"Unlike stocks, options have an EXPIRY DATE. When they expire wrong — they're worth NOTHING. Most option traders lose money. Master Building Blocks first!",example:"💡 Options are level 10 investing. You're still levelling up! Don't rush here."},
+  ],
+   quiz:[
+    {q:"In the PS6 example, what is the $20 you paid to reserve it called?",opts:["The strike price","The premium","The tax","The refund"],correct:1,why:"The premium is the fee you pay for the option — like a reservation deposit!"},
+    {q:"What's the biggest danger of options compared to stocks?",opts:["They're boring","They expire and can become worthless","They're too cheap","Nothing"],correct:1,why:"Options EXPIRE! If you're wrong by the expiry date, they can go to zero. Master stocks first!"},
+   ],},
+  {id:"risk",icon:"🛡️",title:"Risk Management",color:"#10b981",cashReward:100,island:"Safe Harbor",
+   slides:[
+    {icon:"🛡️",title:"The most important skill",body:"The best investors don't focus on making money — they focus on NOT LOSING it. If you protect from big losses, the gains take care of themselves.",example:"💡 Lose 50% of your garden → need 100% gain just to break even. Protecting is harder than gaining!"},
+    {icon:"✂️",title:"Stop losses",body:"A rule that automatically sells if price drops X%. Set the rule BEFORE you buy, when your head is clear — not during a panic!",example:"💡 Like telling a friend 'if I spend too much at the arcade, take my coins!' Rules beat emotions."},
+    {icon:"🍕",title:"Never bet the farm",body:"Max 20% of your garden in ANY single investment. With $1,000 that's $200 max per stock. If it crashes 50%, you only lose $100 — not everything.",example:"💡 Order one pizza slice, not the whole pizza. If you hate it you haven't wasted your whole budget!"},
+  ],
+   quiz:[
+    {q:"What is a 'stop loss'?",opts:["A rule to auto-sell if price drops too much","A way to never lose","A type of stock","A video game"],correct:0,why:"A stop loss automatically sells if the price falls too far — protecting you from big losses!"},
+    {q:"What's the max % of your garden to put in ONE investment?",opts:["100%","20%","75%","50%"],correct:1,why:"Never more than 20% in one thing! If it crashes, you only lose a slice — not everything."},
+   ],},
+  {id:"psychology",icon:"🧠",title:"Market Psychology",color:"#f59e0b",cashReward:100,island:"Mind Mountain",
+   slides:[
+    {icon:"😱",title:"Fear and greed",body:"Stock prices are driven by EMOTIONS — fear and greed. When greedy, people buy and push prices up. When fearful, they panic sell and crash prices. Smart investors do the OPPOSITE of the crowd!",example:"💡 Warren Buffett: 'Be greedy when others are fearful, fearful when others are greedy.'"},
+    {icon:"🐂",title:"Bull and bear markets",body:"BULL market = prices going UP for months 🐂. BEAR market = prices going DOWN 🐻. They ALWAYS switch eventually. Patient investors win both!",example:"💡 2020 COVID crash = bear. 2021 = biggest bull ever. Those who held through the crash made fortunes!"},
+    {icon:"😨",title:"FOMO — the most dangerous feeling",body:"Fear Of Missing Out. Stock up 50%? Everyone buys NOW thinking they'll miss more gains. But when EVERYONE is talking about a stock — it's usually already too late!",example:"💡 Everyone talked about Bitcoin at $69,000. Those who FOMOed watched it crash to $16,000. Painful!"},
+  ],
+   quiz:[
+    {q:"What does the famous rule say to do when others are FEARFUL?",opts:["Be fearful too and sell","Be greedy and look for opportunities","Stop investing forever","Panic"],correct:1,why:"'Be greedy when others are fearful' — crashes are often the best buying opportunities!"},
+    {q:"What is FOMO?",opts:["A type of stock","Fear Of Missing Out — buying because everyone else is","A safe investment","A trading robot"],correct:1,why:"FOMO makes you buy high when everyone's excited — usually right before the price drops!"},
+   ],},
+
+  {id:"dca",icon:"📆",title:"Dollar-Cost Averaging",color:"#06b6d4",cashReward:125,island:"Steady Shores",
+   slides:[
+    {icon:"📆",title:"A little bit, again and again",body:"Instead of spending all your money at once, you invest a small amount on a regular schedule — like every allowance day. Some weeks the price is high, some weeks low. It evens out over time!",example:"💡 Buy $10 of Apple every week. You stop stressing about 'is today the right day?' — you just keep going."},
+    {icon:"🎢",title:"Why it beats guessing",body:"Nobody — not even the pros — can perfectly time the market. DCA means when prices are LOW, your fixed money buys MORE shares. When high, it buys fewer. You automatically buy more on sale!",example:"💡 $10 buys 1 share at $10, but 2 shares at $5. Low prices = bonus shares. The dips become your friend!"},
+    {icon:"😌",title:"The stress-free strategy",body:"DCA is the #1 strategy experts recommend for beginners. You don't watch the news in panic. You don't try to be a hero. You just invest steadily and let time do the work.",example:"💡 People who DCA'd into the market through the 2008 crash ended up RICHER than those who waited for 'the right time'."},
+  ],
+   quiz:[
+    {q:"What does Dollar-Cost Averaging mean?",opts:["Spending all your money at once","Investing a fixed amount regularly over time","Only buying when prices are high","Never investing"],correct:1,why:"DCA = investing a steady amount on a schedule, no matter the price. It removes the stress of timing!"},
+    {q:"When prices DROP, your fixed weekly money buys...",opts:["Fewer shares","The same shares","MORE shares (bonus!)","Nothing"],correct:2,why:"Lower prices mean your money buys more shares — so dips actually help you when you DCA!"},
+   ],},
+
+  {id:"buy_hold",icon:"💎",title:"Buy and Hold",color:"#8b5cf6",cashReward:125,island:"Diamond Isle",
+   slides:[
+    {icon:"💎",title:"Diamond hands win",body:"Buy and Hold means you buy a GREAT company and keep it for years — through ups AND downs. You don't panic-sell on a bad week. This is Warren Buffett's whole secret!",example:"💡 Buffett's rule: 'My favourite holding period is forever.' He's one of the richest people alive from doing exactly this."},
+    {icon:"🐢",title:"The tortoise beats the hare",body:"Studies show people who trade a LOT usually do WORSE than people who buy good companies and do nothing. Every time you trade you risk a mistake. Patience is a superpower.",example:"💡 $1,000 in Apple in 2003, left alone, became over $400,000. The kids who did NOTHING won the most!"},
+    {icon:"🌳",title:"Let it grow",body:"A tree doesn't grow if you keep digging it up to check the roots. Investments are the same — give good companies TIME. The longer you hold quality, the more powerful compound growth becomes.",example:"💡 The boring strategy of 'buy good stuff, wait 10 years' beats almost every fancy trading robot."},
+  ],
+   quiz:[
+    {q:"What is Warren Buffett's famous holding period?",opts:["One day","One week","Forever","One hour"],correct:2,why:"'My favourite holding period is forever' — he buys great companies and holds for decades!"},
+    {q:"Studies show people who trade a LOT usually...",opts:["Get rich fast","Do WORSE than patient holders","Always win","Never make mistakes"],correct:1,why:"Frequent trading usually loses to patient buy-and-hold. Every trade is a chance to slip up!"},
+   ],},
+
+  {id:"diversify_deep",icon:"🧺",title:"Smart Diversification",color:"#10b981",cashReward:100,island:"Balance Bay",
+   slides:[
+    {icon:"🧺",title:"Different baskets, different types",body:"Real diversification isn't just owning 5 things — it's owning 5 DIFFERENT KINDS of things. If you own 5 game companies and gaming crashes, you still lose everything!",example:"💡 Mix it up: a tech company, an entertainment company, a chip maker, maybe a little crypto. Different worlds!"},
+    {icon:"⚖️",title:"When one zigs, another zags",body:"The magic of diversification: different investments often move in different directions. When one drops, another might rise — smoothing out your whole garden so no single crash hurts too much.",example:"💡 In 2022 tech stocks fell but energy stocks soared. A diversified kid barely felt the tech crash!"},
+    {icon:"🍕",title:"Don't over-do it either",body:"Owning 50 things means you can't follow any of them. For a young investor, 4–8 good, different investments is the sweet spot — enough safety, few enough to actually understand.",example:"💡 Know what you own and why. 5 companies you understand beats 50 you've never heard of."},
+  ],
+   quiz:[
+    {q:"True diversification means owning...",opts:["5 companies that all do the same thing","Different KINDS of investments","Only one stock","Only crypto"],correct:1,why:"Owning 5 game companies isn't safe if gaming crashes. Spread across DIFFERENT types of business!"},
+    {q:"For a young investor, a good number of investments is roughly...",opts:["1","50+","4 to 8 different ones","100"],correct:2,why:"4–8 different investments you actually understand is the sweet spot — safe but manageable!"},
+   ],},
+
+  {id:"dividends",icon:"🌰",title:"Dividends — Paid to Wait",color:"#f59e0b",cashReward:125,island:"Harvest Hollow",
+   slides:[
+    {icon:"🌰",title:"Free money for owning",body:"Some companies share their profits with owners every few months — that's a DIVIDEND. You get paid CASH just for holding the stock, even if you never sell it!",example:"💡 Own Apple and it pays a small dividend 4 times a year. It's like a fruit tree that drops fruit every season."},
+    {icon:"🔁",title:"Reinvest for a snowball",body:"Smart investors use dividend money to buy MORE shares — which then pay MORE dividends — which buy even more shares. It snowballs into something huge over years!",example:"💡 This is 'compounding'. Reinvested dividends made up a HUGE chunk of all stock market gains in history."},
+    {icon:"🏦",title:"Steady companies pay them",body:"Big, stable, grown-up companies (think Coca-Cola, Apple) tend to pay dividends. Brand-new risky companies usually don't — they spend everything trying to grow.",example:"💡 Dividends are a sign a company is healthy and profitable enough to share the rewards with you!"},
+  ],
+   quiz:[
+    {q:"What is a dividend?",opts:["A fee you pay","Cash a company pays you for owning its stock","A type of loan","A trading mistake"],correct:1,why:"A dividend is your share of the company's profits — paid to you in cash, just for holding!"},
+    {q:"What's the smart thing to do with dividend money?",opts:["Spend it instantly","Reinvest it to buy more shares","Throw it away","Hide it"],correct:1,why:"Reinvesting dividends buys more shares that pay more dividends — a powerful snowball over time!"},
+   ],},
+
+  {id:"index",icon:"🌐",title:"Index Investing",color:"#6366f1",cashReward:150,island:"Index Island",
+   slides:[
+    {icon:"🌐",title:"Own a tiny bit of everything",body:"Instead of picking which company will win, an INDEX FUND lets you own a tiny slice of hundreds of companies at once. If any one wins, you win a bit. You can't pick the loser by mistake!",example:"💡 The 'S&P 500' is 500 of America's biggest companies in one basket. Buy it and you own all 500!"},
+    {icon:"🏆",title:"It beats most experts",body:"Here's a shocker: over 10+ years, simple index funds beat MOST highly-paid professional fund managers. Picking winners is SO hard that owning everything usually wins!",example:"💡 Buffett bet $1 million that an index fund would beat fancy hedge funds over 10 years. He WON, easily."},
+    {icon:"😴",title:"The lazy genius move",body:"Index investing needs almost no effort — no studying charts, no stress. You own the whole market and ride its long-term rise. Many millionaires were made just doing this for decades.",example:"💡 'Don't look for the needle in the haystack. Just buy the haystack!' — index investing in one sentence."},
+  ],
+   quiz:[
+    {q:"What does an index fund let you do?",opts:["Own one risky stock","Own a tiny bit of hundreds of companies at once","Only buy crypto","Trade every second"],correct:1,why:"An index fund holds many companies at once — instant diversification without picking winners!"},
+    {q:"Over 10+ years, index funds usually...",opts:["Lose all your money","Beat most professional fund managers","Do nothing","Only work for adults"],correct:1,why:"Simple index funds beat most expensive professionals over time — owning everything is powerful!"},
+   ],},
+
+  {id:"value_growth",icon:"🔍",title:"Value vs Growth",color:"#ec4899",cashReward:125,island:"Two Paths Pass",
+   slides:[
+    {icon:"🏷️",title:"Value investing = bargain hunting",body:"A VALUE investor looks for good companies that are temporarily CHEAP — like finding a $100 toy on sale for $60. They buy quality at a discount and wait for the price to catch up.",example:"💡 Warren Buffett is a value investor. He asks: 'Is this worth MORE than its price tag right now?'"},
+    {icon:"🚀",title:"Growth investing = future stars",body:"A GROWTH investor buys companies growing super fast, betting they'll be HUGE later — even if they look expensive now. Riskier, but the winners can be enormous.",example:"💡 Buying Amazon or Tesla early when they looked 'too expensive' — growth investors who were right got rich."},
+    {icon:"⚖️",title:"Which is better? Both!",body:"Neither always wins — they take turns. Many smart investors mix BOTH: some steady bargains, some exciting growth bets. Knowing the difference helps you understand WHY you're buying something.",example:"💡 Ask yourself before buying: 'Am I getting a bargain (value) or betting on the future (growth)?'"},
+  ],
+   quiz:[
+    {q:"A VALUE investor looks for...",opts:["The most expensive stock","Good companies that are temporarily cheap","Only brand-new companies","Crypto only"],correct:1,why:"Value investing is bargain hunting — buying quality companies when they're on sale!"},
+    {q:"A GROWTH investor bets on...",opts:["Companies that will shrink","Fast-growing companies becoming huge later","Only cheap stocks","Never selling"],correct:1,why:"Growth investors buy fast-growing companies, betting they'll be much bigger in the future!"},
+   ],},
+
+  {id:"time_in_market",icon:"⏰",title:"Time IN the Market",color:"#10b981",cashReward:150,island:"Patience Point",
+   slides:[
+    {icon:"⏰",title:"The most important rule",body:"There's a famous saying: 'Time IN the market beats TIMING the market.' Translation: how LONG you stay invested matters far more than trying to guess the perfect day to buy or sell.",example:"💡 Trying to jump in and out at perfect moments almost never works. Staying invested for years almost always does."},
+    {icon:"😬",title:"Missing the best days hurts",body:"Here's the scary part: the market's biggest UP days often come right after the scary down days. If you panic-sell and miss just a handful of those best days, your returns collapse.",example:"💡 Miss the 10 best days over 20 years and you could HALVE your gains. The panic-sellers miss them every time!"},
+    {icon:"🧘",title:"Boring is beautiful",body:"The kids who do best aren't the ones glued to prices all day. They invest in good things and let time work. Calm beats clever. Years beat hours.",example:"💡 'The stock market is a device for transferring money from the impatient to the patient.' — Warren Buffett"},
+  ],
+   quiz:[
+    {q:"The famous saying is: 'Time IN the market beats...'",opts:["Time at school","TIMING the market","Time on your phone","Nothing"],correct:1,why:"Staying invested over time beats trying to guess perfect buy/sell days — which almost never works!"},
+    {q:"What happens if you panic-sell and miss the market's best days?",opts:["Nothing changes","Your gains can collapse","You get richer","You win a prize"],correct:1,why:"The best up-days often follow scary drops. Miss them by panicking and your returns can halve!"},
+   ],},
+
+  {id:"exit_strategy",icon:"🚪",title:"Exit Strategies",color:"#ef4444",cashReward:150,island:"Exit Summit",
+   slides:[
+    {icon:"🚪",title:"Plan your exit BEFORE you enter",body:"Pro investors decide when they'll SELL before they even buy. Two rules: a TAKE-PROFIT price (cash out when you've won enough) and a STOP-LOSS price (get out if it drops too far). Decide calmly, in advance.",example:"💡 'I'll sell Apple if it gains 30%, OR if it drops 20%.' Write it down. Then emotions can't trick you later!"},
+    {icon:"🎯",title:"Take-profit: lock in the win",body:"When a stock hits your target gain, selling some (or all) turns paper profit into REAL money. Greedy investors who never take profit often watch their gains vanish.",example:"💡 Up 40% on a meme stock? Taking profit means you actually KEEP it instead of riding it back down to zero."},
+    {icon:"🛑",title:"Stop-loss: protect the downside",body:"A stop-loss is your safety net — sell automatically if the price falls past a line you set. It caps how much you can lose on any one bet, so no single mistake wrecks your whole garden.",example:"💡 Set a stop-loss 20% below your buy price. Worst case you lose 20%, not everything. Survival first!"},
+    {icon:"🧩",title:"Match your exit to your reason",body:"If you bought for the LONG term (buy & hold), your 'exit' might be years away. If it was a short risky bet, set tight exits. Always know: why did I buy, and what would make me sell?",example:"💡 The best investors are never surprised — they always know their plan for both winning AND losing."},
+  ],
+   quiz:[
+    {q:"When should you plan your exit (when to sell)?",opts:["Never","After you've already lost money","BEFORE you even buy","Only when panicking"],correct:2,why:"Decide your sell rules calmly BEFORE buying — then emotions can't trick you into bad decisions later!"},
+    {q:"What does a STOP-LOSS do?",opts:["Guarantees profit","Sells automatically if price drops too far, capping your loss","Buys more forever","Nothing useful"],correct:1,why:"A stop-loss caps your downside — you lose a set amount at most, so one bad bet can't wreck everything!"},
+   ],},
+];
+
+// ─── Daily stories ─────────────────────────────────
+const DAILY_STORIES = [
+  {icon:"🍎",title:"Why did Apple go up today?",color:"#6366f1",
+   body:"Apple just announced their new iPhone 16 line. Analysts say it could be their biggest seller ever. When a company announces a hit product, investors rush to buy — pushing the price UP! This is called a 'catalyst'.",
+   lesson:"💡 Good news = more buyers = higher price. Always check WHY a stock is moving!"},
+  {icon:"🎮",title:"Why did Roblox jump 8% today?",color:"#ec4899",
+   body:"Roblox reported 71 million daily players — beating expectations by 15 million. More players = more Robux purchases = more revenue. Investors got excited and bought shares, pushing the price up fast.",
+   lesson:"💡 Earnings reports that BEAT expectations usually cause big price jumps. Watch out for these!"},
+  {icon:"📉",title:"Why did the whole market drop today?",color:"#ef4444",
+   body:"The US government raised interest rates. Higher rates mean it costs more to borrow money. Companies pay more in loans, profits shrink, and investors sell stocks to put money in bank savings instead.",
+   lesson:"💡 Interest rate changes affect ALL stocks at once. It's called a 'macro event' — the economy affecting everything!"},
+  {icon:"₿",title:"Why did Bitcoin crash 15% overnight?",color:"#f59e0b",
+   body:"A large crypto exchange had technical problems and paused withdrawals. Scared investors sold Bitcoin as fast as possible in case they couldn't access their money. Mass fear = mass selling = price crash.",
+   lesson:"💡 Crypto crashes fast because it's driven by CONFIDENCE, not real products. When confidence cracks — watch out!"},
+  {icon:"🦈",title:"What is a short squeeze?",color:"#8b5cf6",
+   body:"Some traders BET that a stock will go DOWN by 'short selling' it. But if the stock goes UP instead, they panic-buy to stop their losses. All that panic buying makes the stock go up EVEN MORE. It's a squeeze!",
+   lesson:"💡 GameStop went from $4 to $483 in 2021 because of a short squeeze. Regular investors made fortunes overnight!"},
+];
+
+// ─── Siblings (for challenges) ─────────────────────
+const SIBLINGS = [
+  {id:"s1",name:"Sam",  avatar:"🦁",color:"#ec4899",cash:850,portPnl:+120,lastActive:"2h ago"},
+  {id:"s2",name:"Riley",avatar:"⚡",color:"#10b981",cash:1200,portPnl:-45, lastActive:"1h ago"},
+];
+
+// ─── LB data ───────────────────────────────────────
+const LB_BASE = [
+  {name:"Jordan",val:12847,avatar:"🏆",chg:"+8.2%",up:true},
+  {name:"Taylor",val:9650, avatar:"🦋",chg:"+3.1%",up:true},
+  {name:"Morgan",val:8420, avatar:"🐯",chg:"-1.4%",up:false},
+  {name:"Riley", val:7830, avatar:"⚡",chg:"+0.9%",up:true},
+  {name:"Casey", val:6200, avatar:"🌟",chg:"-2.1%",up:false},
+];
+
+// ─── Spin prizes ───────────────────────────────────
+const SPIN_PRIZES = [
+  {label:"50 Coins",   icon:"🪙",  type:"coins",  val:50},
+  {label:"$25 Cash",   icon:"💵",  type:"cash",   val:25},
+  {label:"100 XP",     icon:"⚡",  type:"xp",     val:100},
+  {label:"Rare Card!", icon:"✨",  type:"card",   val:1},
+  {label:"25 Coins",   icon:"🪙",  type:"coins",  val:25},
+  {label:"$10 Cash",   icon:"💵",  type:"cash",   val:10},
+  {label:"200 XP",     icon:"⚡",  type:"xp",     val:200},
+  {label:"75 Coins",   icon:"🪙",  type:"coins",  val:75},
+];
+
+// ─── Coin Shop items (cosmetic only — coins are for FUN) ───
+const SHOP_ITEMS = [
+  {id:"theme_neon",   icon:"🌃", name:"Neon Theme",        desc:"Unlock the Neon Cyberpunk look",       cost:200, type:"theme"},
+  {id:"theme_ocean",  icon:"🌊", name:"Ocean Theme",       desc:"Unlock the Underwater World look",      cost:200, type:"theme"},
+  {id:"avatar_dragon",icon:"🐉", name:"Dragon Avatar",     desc:"A legendary dragon profile icon",       cost:150, type:"avatar"},
+  {id:"avatar_unicorn",icon:"🦄",name:"Unicorn Avatar",    desc:"A magical unicorn profile icon",        cost:150, type:"avatar"},
+  {id:"pet_hat",      icon:"🎩", name:"Top Hat for Pet",   desc:"Dress up your trading buddy",           cost:100, type:"cosmetic"},
+  {id:"pet_crown",    icon:"👑", name:"Crown for Pet",     desc:"Make your buddy royalty",               cost:250, type:"cosmetic"},
+  {id:"frame_gold",   icon:"🏅", name:"Gold Name Frame",   desc:"Golden glow around your leaderboard name",cost:300,type:"cosmetic"},
+  {id:"streak_freeze",icon:"🧊", name:"Streak Freeze",     desc:"Protects your streak if you miss 1 day", cost:120, type:"powerup"},
+  {id:"extra_token",  icon:"⚡", name:"Extra Trade Token", desc:"One bonus trade for today",             cost:80,  type:"powerup", consumable:true},
+];
+
+// ─── Achievement badges ───
+const BADGES = [
+  {id:"first_trade", icon:"🥇", name:"First Trade",     desc:"Made your very first investment",        check:s=>s.trades>=1},
+  {id:"first_lesson",icon:"🎓", name:"Quick Learner",   desc:"Completed your first lesson",            check:s=>s.lessons>=1},
+  {id:"diversified", icon:"🧺", name:"Diversified",     desc:"Own 3 or more different assets",          check:s=>s.assets>=3},
+  {id:"scholar",     icon:"📚", name:"Scholar",         desc:"Completed all lessons",                  check:s=>s.lessons>=LESSONS.length},
+  {id:"high_roller", icon:"💎", name:"High Roller",     desc:"Grew your garden past $1,500",           check:s=>s.value>=1500},
+  {id:"profit_maker",icon:"📈", name:"Profit Maker",    desc:"Made your first profitable sell",        check:s=>s.profitableSells>=1},
+  {id:"streak_star", icon:"🔥", name:"Streak Star",     desc:"Logged in 7 days in a row",              check:s=>s.streak>=7},
+  {id:"card_collector",icon:"🎴",name:"Card Collector", desc:"Earned 5 investment cards",              check:s=>s.cards>=5},
+  {id:"fortune_teller",icon:"🔮",name:"Fortune Teller", desc:"Made 3 price predictions",               check:s=>s.predictions>=3},
+  {id:"big_brain",   icon:"🧠", name:"Big Brain",       desc:"Reached Level 5",                        check:s=>s.level>=5},
+];
+
+// ─── Starter buddies (Pokémon-style companions) ───
+const STARTERS = [
+  {id:"flame", emoji:"🦊", name:"Fennix",  type:"Fire",  color:"#f97316", glow:"#fb923c", blurb:"A fiery fox who loves a winning streak!"},
+  {id:"leaf",  emoji:"🐲", name:"Sproutle",type:"Leaf",  color:"#10b981", glow:"#34d399", blurb:"A leafy dragon that grows with your garden!"},
+  {id:"spark", emoji:"⚡", name:"Voltik",  type:"Spark", color:"#eab308", glow:"#fde047", blurb:"A zappy bolt-buddy full of energy!"},
+  {id:"aqua",  emoji:"🐢", name:"Shellby", type:"Aqua",  color:"#06b6d4", glow:"#67e8f9", blurb:"A chill turtle who stays calm in a crash!"},
+  {id:"mystic",emoji:"🦄", name:"Lumina",  type:"Mystic",color:"#a855f7", glow:"#c4b5fd", blurb:"A magical unicorn with rare instincts!"},
+];
+
+
+
+// ═══════════════════════════════════════════════════
+// CSS
+// ═══════════════════════════════════════════════════
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800;900&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--fd:'Fredoka One',cursive;--fb:'Nunito',sans-serif;--r:14px;--rl:22px}
+body{font-family:var(--fb);overflow:hidden}
+.app{height:100vh;width:100vw;overflow:hidden;position:relative}
+
+/* Stars */
+.stars{position:fixed;inset:0;overflow:hidden;z-0;pointer-events:none}
+.star{position:absolute;border-radius:50%;background:#fff;animation:twinkle linear infinite}
+@keyframes twinkle{0%,100%{opacity:.1}50%{opacity:.65}}
+
+/* ── Auth screens ── */
+.page{height:100vh;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow-y:auto;position:relative;z-index:1}
+.card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:var(--rl);padding:28px 22px;width:100%;max-width:400px;backdrop-filter:blur(20px)}
+.dots{display:flex;gap:7px;justify-content:center;margin-bottom:20px}
+.dot{height:6px;border-radius:100px;background:rgba(255,255,255,.2);transition:all .3s}
+.dot.on{background:#fff;width:22px}.dot:not(.on){width:6px}
+.ttl{font-family:var(--fd);font-size:22px;color:#fff;margin-bottom:8px;line-height:1.2;text-align:center}
+.sub{font-size:13px;color:rgba(255,255,255,.65);font-weight:600;line-height:1.7;margin-bottom:16px;text-align:center}
+.inp{width:100%;padding:13px 15px;border-radius:13px;font-family:var(--fb);font-size:15px;font-weight:700;outline:none;margin-bottom:10px;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.2);color:#fff;transition:all .2s}
+.inp:focus{border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.15)}
+.inp::placeholder{color:rgba(255,255,255,.4)}
+.lbl{font-size:12px;font-weight:800;color:rgba(255,255,255,.7);margin-bottom:5px}
+.btn{width:100%;padding:15px;border-radius:14px;border:none;font-family:var(--fd);font-size:16px;cursor:pointer;transition:all .2s;margin-top:6px}
+.btn:active{transform:scale(.97)}.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-w{background:#fff;color:#1e1b4b;box-shadow:0 4px 14px rgba(0,0,0,.15)}
+.btn-p{background:linear-gradient(135deg,#7c3aed,#9333ea);color:#fff;box-shadow:0 4px 14px rgba(124,58,237,.4)}
+.btn-g{background:linear-gradient(135deg,#047857,#10b981);color:#fff;box-shadow:0 4px 14px rgba(4,120,87,.35)}
+.btn-link{background:none;border:none;color:rgba(255,255,255,.4);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--fb);padding:8px;display:block;text-align:center;width:100%}
+.role-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.role-btn{border-radius:var(--rl);padding:26px 14px;border:2px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);cursor:pointer;text-align:center;transition:all .22s;color:#fff}
+.role-btn:active{transform:scale(.96)}.role-btn:hover{border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.11)}
+.role-icon{font-size:46px;display:block;margin-bottom:9px}
+.role-title{font-family:var(--fd);font-size:16px;margin-bottom:4px}
+.role-sub{font-size:11px;color:rgba(255,255,255,.5);font-weight:600;line-height:1.4}
+.av-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px}
+.av-opt{aspect-ratio:1;border-radius:12px;border:2px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:25px;cursor:pointer;transition:all .2s}
+.av-opt:active{transform:scale(.9)}.av-opt.sel{border-color:#fff;background:rgba(255,255,255,.2);transform:scale(1.08)}
+.age-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.age-btn{padding:12px 4px;border-radius:11px;border:2px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);font-family:var(--fd);font-size:15px;cursor:pointer;transition:all .2s;text-align:center}
+.age-btn.sel{border-color:#fff;background:rgba(255,255,255,.2);color:#fff}
+.age-btn:active{transform:scale(.94)}
+.theme-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.theme-opt{border-radius:13px;padding:14px 10px;border:2px solid rgba(255,255,255,.1);cursor:pointer;text-align:center;transition:all .2s}
+.theme-opt.sel{border-color:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.18)}
+.theme-opt:active{transform:scale(.96)}
+.theme-dot{width:24px;height:24px;border-radius:50%;margin:0 auto 7px;box-shadow:0 3px 8px rgba(0,0,0,.4)}
+.theme-lbl{font-size:11px;font-weight:800;color:#fff}
+.pin-dots{display:flex;gap:12px;justify-content:center;margin:14px 0}
+.pin-dot{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.35);transition:all .2s}
+.pin-dot.filled{background:#fff;border-color:#fff;box-shadow:0 0 8px rgba(255,255,255,.4)}
+.pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pin-btn{padding:16px;border-radius:14px;border:1px solid rgba(255,255,255,.17);background:rgba(255,255,255,.09);color:#fff;font-family:var(--fd);font-size:20px;cursor:pointer;transition:all .2s}
+.pin-btn:active{background:rgba(255,255,255,.25);transform:scale(.94)}
+.pin-btn.del{font-size:16px;color:rgba(255,255,255,.6)}
+.pin-err{color:#fca5a5;font-size:12px;font-weight:700;text-align:center;margin-top:8px;animation:shake .4s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+.twofa-row{display:flex;gap:8px;justify-content:center;margin:14px 0}
+.twofa-inp{width:42px;height:52px;border-radius:12px;border:2px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#fff;font-family:var(--fd);font-size:22px;text-align:center;outline:none;transition:all .2s}
+.twofa-inp:focus{border-color:#fff;background:rgba(255,255,255,.18)}
+.twofa-inp.filled{border-color:rgba(255,255,255,.5)}
+.email-pop{background:rgba(255,255,255,.96);border-radius:var(--rl);overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.3);margin-top:14px;animation:popUp .4s cubic-bezier(.34,1.56,.64,1)}
+.email-hd{background:linear-gradient(135deg,#1d4ed8,#2563eb);padding:11px 15px;display:flex;align-items:center;gap:8px}
+.email-logo{width:26px;height:26px;border-radius:6px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.email-bd{padding:14px}
+.email-sub{font-size:13px;font-weight:800;color:#1e1b4b;margin-bottom:8px}
+.email-txt{font-size:11px;font-weight:600;color:#4b5563;line-height:1.6;margin-bottom:12px}
+.email-code-box{background:linear-gradient(135deg,#f5f0ff,#ede9fe);border:2px solid rgba(124,58,237,.2);border-radius:13px;padding:14px;text-align:center;margin-bottom:8px}
+.email-code{font-family:var(--fd);font-size:34px;color:#7c3aed;letter-spacing:8px}
+.email-foot{font-size:10px;color:#9ca3af;font-weight:600;text-align:center}
+.sec-badge{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);border-radius:12px;padding:11px 13px;margin-bottom:12px;display:flex;gap:8px;font-size:12px;font-weight:700;color:rgba(255,255,255,.85);line-height:1.5}
+.profiles-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.prof-card{background:rgba(255,255,255,.07);border:2px solid rgba(255,255,255,.1);border-radius:var(--rl);padding:16px 12px;text-align:center;cursor:pointer;transition:all .2s}
+.prof-card:active{transform:scale(.96)}.prof-card:hover{border-color:rgba(255,255,255,.28);background:rgba(255,255,255,.11)}
+.prof-av{font-size:42px;display:block;margin-bottom:7px}
+.prof-nm{font-family:var(--fd);font-size:14px;color:#fff}
+.prof-sub{font-size:10px;color:rgba(255,255,255,.45);font-weight:700;margin-top:2px}
+.prof-new{border-style:dashed;border-color:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;padding:24px 12px}
+.celebrate-ov{position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:24px}
+.conf-wrap{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+.conf-p{position:absolute;border-radius:2px;animation:confFall linear infinite}
+@keyframes confFall{0%{transform:translateY(-20px) rotate(0);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
+
+/* ── Dashboard shell ── */
+.dash{height:100vh;display:flex;flex-direction:column;overflow:hidden;position:relative;z-index:1}
+.topbar{display:flex;align-items:center;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.3);backdrop-filter:blur(16px);flex-shrink:0;gap:10px;z-index:20;position:relative}
+.tb-av{width:36px;height:36px;border-radius:11px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.tb-name{font-family:var(--fd);font-size:15px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb-sub{font-size:10px;color:rgba(255,255,255,.5);font-weight:700}
+.tb-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.tb-chip{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:100px;padding:5px 11px;font-size:12px;font-weight:800;color:#fff;white-space:nowrap}
+.tb-chip.gold{color:#f59e0b}.tb-chip.fire{color:#fb923c}
+.main{flex:1;overflow-y:auto;padding:14px 14px 80px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.1) transparent}
+.bnav{display:flex;position:fixed;bottom:0;left:0;right:0;height:64px;background:rgba(0,0,0,.7);border-top:1px solid rgba(255,255,255,.1);backdrop-filter:blur(20px);z-index:50;padding-bottom:env(safe-area-inset-bottom,0px)}
+.bnav-btn{flex:1;border:none;background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:rgba(255,255,255,.35);font-family:var(--fb);font-size:9px;font-weight:800;position:relative}
+.bnav-btn .bni{font-size:22px;transition:transform .2s}
+.bnav-btn.on{color:#fff}.bnav-btn.on .bni{transform:scale(1.18);filter:drop-shadow(0 2px 6px rgba(255,255,255,.35))}
+.bnav-btn.on::after{content:'';position:absolute;top:0;left:22%;right:22%;height:3px;border-radius:0 0 4px 4px;background:#fff}
+
+/* ── Tour overlay ── */
+.tour-ov{position:fixed;inset:0;z-index:400;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:0 0 80px}
+.tour-bg{position:absolute;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(4px)}
+.tour-card{background:linear-gradient(135deg,#1a0e3a,#0d1a2e);border:2px solid rgba(124,58,237,.4);border-radius:24px;padding:26px 22px;width:calc(100% - 32px);max-width:400px;position:relative;z-index:1;animation:popUp .4s cubic-bezier(.34,1.56,.64,1)}
+
+/* ── Stock alert toast ── */
+.alert-toast{position:fixed;top:0;left:0;right:0;z-index:300;padding:10px 14px;display:flex;align-items:center;gap:10px;animation:slideDown .4s ease;font-size:13px;font-weight:800}
+@keyframes slideDown{from{transform:translateY(-100%);opacity:0}to{transform:translateY(0);opacity:1}}
+.alert-toast.up{background:rgba(4,120,87,.95);color:#86efac}
+.alert-toast.dn{background:rgba(185,28,28,.95);color:#fca5a5}
+
+/* ── Pet mascot ── */
+.pet-card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.pet-em{font-size:42px;animation:float 2.8s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+.pet-bubble{background:rgba(255,255,255,.1);border-radius:100px;padding:6px 13px;font-size:12px;font-weight:700;color:rgba(255,255,255,.85)}
+
+/* ── Spin wheel ── */
+.wheel-wrap{position:relative;width:220px;height:220px;margin:0 auto 16px}
+.wheel{width:100%;height:100%;border-radius:50%;position:relative;transition:transform 4s cubic-bezier(.17,.67,.12,.99);border:4px solid rgba(255,255,255,.3);box-shadow:0 0 30px rgba(124,58,237,.4)}
+.wheel-pointer{position:absolute;top:-14px;left:50%;transform:translateX(-50%);font-size:22px;z-index:2;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+.spin-btn{width:100%;padding:15px;border-radius:14px;border:none;background:linear-gradient(135deg,#7c3aed,#9333ea);color:#fff;font-family:var(--fd);font-size:17px;cursor:pointer;box-shadow:0 4px 18px rgba(124,58,237,.5)}
+.spin-btn:disabled{opacity:.4;cursor:not-allowed}
+.spin-btn:active{transform:scale(.97)}
+
+/* ── Collectible cards ── */
+.cards-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(min-width:480px){.cards-grid{grid-template-columns:repeat(3,1fr)}}
+.inv-card{border-radius:16px;padding:16px;position:relative;overflow:hidden;cursor:pointer;transition:all .25s}
+.inv-card:active{transform:scale(.96)}
+.inv-card.holo{box-shadow:0 0 20px rgba(124,58,237,.4),0 0 40px rgba(6,182,212,.2)}
+.inv-card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.1),rgba(0,0,0,.06))}
+.card-shine{position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:linear-gradient(45deg,transparent 40%,rgba(255,255,255,.08) 50%,transparent 60%);animation:shine 3s ease-in-out infinite;pointer-events:none}
+@keyframes shine{0%,100%{transform:translateX(-100%) rotate(45deg)}50%{transform:translateX(100%) rotate(45deg)}}
+.card-tier{position:absolute;top:9px;right:9px;font-size:9px;font-weight:800;padding:2px 7px;border-radius:100px;text-transform:uppercase;background:rgba(0,0,0,.25);color:rgba(255,255,255,.75)}
+.card-ic{font-size:32px;display:block;margin-bottom:6px}
+.card-nm{font-family:var(--fd);font-size:14px;color:#fff;margin-bottom:3px}
+.card-pnl{font-size:12px;font-weight:800}
+
+/* ── Adventure map ── */
+.map-wrap{position:relative;padding:10px 0 20px}
+.map-path{position:absolute;left:50%;top:0;bottom:0;width:3px;background:linear-gradient(to bottom,rgba(255,255,255,.05),rgba(255,255,255,.12),rgba(255,255,255,.05));transform:translateX(-50%)}
+.map-node{display:flex;align-items:center;gap:14px;margin-bottom:22px;position:relative;z-index:1}
+.map-node.right{flex-direction:row-reverse}
+.map-circle{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;transition:all .3s;border:3px solid transparent}
+.map-circle.done{border-color:#10b981;background:linear-gradient(135deg,#047857,#10b981);box-shadow:0 0 0 4px rgba(16,185,129,.15)}
+.map-circle.curr{border-color:#7c3aed;background:linear-gradient(135deg,#7c3aed,#9333ea);box-shadow:0 0 0 4px rgba(124,58,237,.2);animation:pulse 2s ease-in-out infinite}
+.map-circle.lock{border-color:rgba(255,255,255,.1);background:rgba(255,255,255,.06)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 4px rgba(124,58,237,.2)}50%{box-shadow:0 0 0 8px rgba(124,58,237,.1),0 0 20px rgba(124,58,237,.3)}}
+.map-content{flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px 14px;transition:all .2s}
+.map-content.curr{border-color:rgba(124,58,237,.35);background:rgba(124,58,237,.1)}
+.map-content.done{border-color:rgba(16,185,129,.25);background:rgba(16,185,129,.07)}
+.map-island{font-size:10px;font-weight:800;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+.map-title{font-family:var(--fd);font-size:14px;color:#fff;margin-bottom:3px}
+.map-rewards{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+.map-rew-chip{font-size:9px;font-weight:800;padding:2px 7px;border-radius:100px}
+
+/* ── Challenge card ── */
+.challenge-card{background:linear-gradient(135deg,rgba(124,58,237,.15),rgba(6,182,212,.08));border:2px solid rgba(124,58,237,.3);border-radius:var(--rl);padding:18px;margin-bottom:12px}
+.vs-row{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.vs-player{flex:1;text-align:center}
+.vs-badge{font-size:11px;font-weight:800;padding:3px 10px;border-radius:100px;margin-top:4px;display:inline-block}
+.vs-label{font-size:11px;font-weight:800;padding:6px 10px;border-radius:100px;background:rgba(255,255,255,.1);color:rgba(255,255,255,.6)}
+.challenge-bar{height:10px;background:rgba(255,255,255,.08);border-radius:100px;overflow:hidden;position:relative}
+.challenge-fill{height:100%;border-radius:100px;position:absolute;top:0;transition:width .8s ease}
+
+/* ── Club ── */
+.club-pool{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:var(--rl);padding:18px;margin-bottom:12px}
+.member-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.member-row:last-child{border-bottom:none;padding-bottom:0}
+
+/* ── Predictions ── */
+.pred-card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:var(--rl);padding:16px;margin-bottom:12px}
+.pred-btns{display:flex;gap:10px;margin-top:12px}
+.pred-btn-up{flex:1;padding:13px;border-radius:13px;border:none;background:linear-gradient(135deg,#047857,#10b981);color:#fff;font-family:var(--fd);font-size:15px;cursor:pointer}
+.pred-btn-dn{flex:1;padding:13px;border-radius:13px;border:none;background:linear-gradient(135deg,#b91c1c,#ef4444);color:#fff;font-family:var(--fd);font-size:15px;cursor:pointer}
+.pred-btn-up:active,.pred-btn-dn:active{transform:scale(.97)}
+
+/* ── Report card ── */
+.report-star{font-size:32px;margin-bottom:4px}
+.report-grade{font-family:var(--fd);font-size:48px;margin-bottom:4px}
+.stat-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:13px;font-weight:700;color:rgba(255,255,255,.75)}
+.stat-row:last-child{border-bottom:none}
+.stat-row .val{font-family:var(--fd);font-size:15px;color:#fff}
+
+/* ── Lesson modal ── */
+.lesson-ov{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px}
+.lesson-modal{background:#111827;border:1px solid rgba(124,58,237,.3);border-radius:var(--rl);width:100%;max-width:440px;overflow:hidden;animation:popUp .4s cubic-bezier(.34,1.56,.64,1)}
+.lesson-prog{height:5px;background:rgba(255,255,255,.08)}.lesson-prog-fill{height:100%;transition:width .3s}
+.lesson-body{padding:22px 20px}
+.lesson-ic{font-size:50px;text-align:center;display:block;margin-bottom:12px;animation:popUp .35s ease}
+.lesson-title{font-family:var(--fd);font-size:19px;color:#fff;text-align:center;margin-bottom:10px}
+.lesson-txt{font-size:13px;color:rgba(255,255,255,.68);font-weight:600;line-height:1.75;text-align:center}
+.lesson-ex{border-radius:12px;padding:12px;margin-top:13px;font-size:12px;font-weight:700;text-align:left;line-height:1.5}
+.lesson-footer{padding:0 20px 20px;display:flex;gap:9px}
+.lesson-back{flex:1;padding:12px;border-radius:14px;border:1.5px solid rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.5);font-family:var(--fd);font-size:14px;cursor:pointer}
+.lesson-next{flex:2;padding:12px;border-radius:14px;border:none;color:#fff;font-family:var(--fd);font-size:14px;cursor:pointer}
+.lesson-next:active,.lesson-back:active{transform:scale(.97)}
+
+/* ── Trade modal ── */
+.trade-ov{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:100;display:flex;align-items:flex-end;justify-content:center}
+.trade-modal{background:#111827;border:1px solid rgba(124,58,237,.3);border-radius:22px 22px 0 0;padding:22px 18px;width:100%;max-width:520px;padding-bottom:calc(22px + env(safe-area-inset-bottom,0px));animation:slideUp .32s cubic-bezier(.34,1.56,.64,1)}
+@keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes popUp{from{transform:scale(.85) translateY(20px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}
+/* ── Adventure game animations ── */
+@keyframes buddyIdle{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-6px) scale(1.03)}}
+@keyframes buddyHop{0%{transform:translateY(0)}30%{transform:translateY(-34px) scale(1.1,.9)}55%{transform:translateY(-10px)}100%{transform:translateY(0)}}
+@keyframes buddyCheer{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-18px) rotate(-12deg)}50%{transform:translateY(-26px) rotate(0)}75%{transform:translateY(-18px) rotate(12deg)}}
+@keyframes buddySad{0%,100%{transform:translateX(0) rotate(0)}20%{transform:translateX(-7px) rotate(-7deg)}40%{transform:translateX(7px) rotate(7deg)}60%{transform:translateX(-5px) rotate(-5deg)}80%{transform:translateX(5px) rotate(5deg)}}
+@keyframes coinFly{0%{transform:translate(0,0) scale(1);opacity:1}100%{transform:translate(var(--cx,0),-120px) scale(.4);opacity:0}}
+@keyframes screenShake{0%,100%{transform:translate(0,0)}20%{transform:translate(-8px,4px)}40%{transform:translate(8px,-4px)}60%{transform:translate(-6px,2px)}80%{transform:translate(6px,-2px)}}
+@keyframes redFlash{0%{opacity:0}30%{opacity:.55}100%{opacity:0}}
+@keyframes pathGlow{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.0)}50%{box-shadow:0 0 16px 3px var(--gl,rgba(124,58,237,.5))}}
+@keyframes confettiPop{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(-140px) rotate(360deg);opacity:0}}
+@keyframes dustPuff{0%{transform:scale(.4);opacity:.7}100%{transform:scale(1.6);opacity:0}}
+.shake{animation:screenShake .4s ease}
+.game-buddy{font-size:54px;display:inline-block;filter:drop-shadow(0 6px 10px rgba(0,0,0,.4))}
+.game-buddy.idle{animation:buddyIdle 2.2s ease-in-out infinite}
+.game-buddy.hop{animation:buddyHop .55s cubic-bezier(.34,1.56,.64,1)}
+.game-buddy.cheer{animation:buddyCheer .7s ease}
+.game-buddy.sad{animation:buddySad .5s ease}
+.handle{width:36px;height:4px;border-radius:100px;background:rgba(255,255,255,.15);margin:0 auto 16px}
+.qty-row{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.qty-btn{width:48px;height:48px;border-radius:13px;border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);color:#fff;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.qty-btn:active{background:rgba(124,58,237,.4);border-color:rgba(124,58,237,.6)}
+.success-ov{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:200;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:24px;text-align:center}
+.reward-ov{position:fixed;inset:0;background:rgba(0,0,0,.93);z-index:250;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:24px;text-align:center}
+
+/* ── More drawer ── */
+.drawer-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:80;display:flex;align-items:flex-end}
+.drawer{background:rgba(15,10,30,.95);border-radius:22px 22px 0 0;width:100%;padding:20px 16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));animation:slideUp .28s ease;backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.1)}
+.drawer-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+.drawer-btn{border:1px solid rgba(255,255,255,.1);border-radius:var(--r);padding:14px 8px;background:rgba(255,255,255,.06);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:var(--fb);font-size:10px;font-weight:800;color:rgba(255,255,255,.75);transition:all .2s}
+.drawer-btn:active{transform:scale(.96)}.drawer-btn .di{font-size:26px}
+.drawer-btn.on{border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.14);color:#fff}
+.news-card{border-radius:var(--rl);padding:16px;margin-bottom:12px}
+`;
+
+// ═══════════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════════
+export default function ToyboxApp() {
+  const [screen,    setScreen]    = useState("welcome");
+  const [kids,      setKids]      = useState([]);
+  const [regData,   setRegData]   = useState({});
+  const [loginKid,  setLoginKid]  = useState(null);
+  const [twoFACode, setTwoFACode] = useState("");
+  const [authUser,  setAuthUser]  = useState(null);
+  const [savedState,setSavedState]= useState(null);  // loaded kid state for resume
+  const [bgTheme,   setBgTheme]   = useState(THEMES[0]);
+  const [loaded,    setLoaded]    = useState(false);
+
+  // Load registered kids from storage on first load
+  useEffect(()=>{ (async()=>{
+    const reg = await loadData(KIDS_KEY);
+    if(reg && Array.isArray(reg)) setKids(reg);
+    setLoaded(true);
+  })(); },[]);
+
+  // Save kids registry whenever it changes
+  useEffect(()=>{ if(loaded) saveData(KIDS_KEY, kids); },[kids,loaded]);
+
+  const bg = authUser?.theme ? (THEMES.find(t=>t.id===authUser.theme)?.bg||bgTheme.bg) : bgTheme.bg;
+
+  const enterTwoFA = to => { setTwoFACode(genCode()); setScreen(to); };
+  const onKidReg   = data => {
+    const k = {id:Date.now().toString(),name:data.name,avatar:data.avatar,age:data.age,email:data.email,pin:data.pin,theme:data.theme||"space",cash:1000,coins:50,xp:0,streak:0,joinedAt:new Date().toLocaleDateString("en-GB")};
+    setKids(ks=>[...ks,k]); setAuthUser(k); setSavedState(null); setScreen("celebrate");
+    setTimeout(()=>setScreen("kid_dash"),3000);
+  };
+  const onKidLogin = async k => {
+    const st = await loadData(stateKey(k.id));
+    setSavedState(st);
+    setAuthUser(k);
+    setScreen("kid_dash");
+  };
+
+  // Restore a full account from a backup code
+  const onRestore = async ({account, state}) => {
+    // Re-add the account to the registry (replace if same id exists)
+    setKids(ks=>{ const without=ks.filter(x=>x.id!==account.id); return [...without, account]; });
+    // Save the restored progress to storage
+    if(state) await saveData(stateKey(account.id), state);
+    setSavedState(state||null);
+    setAuthUser(account);
+    setScreen("kid_dash");
+  };
+
+  // Parent resets a kid's progress (or removes account entirely)
+  const onResetKid = async (kidId, mode) => {
+    try { await window.storage.delete(stateKey(kidId), false); } catch(e) {}
+    if(mode==="remove"){
+      setKids(ks=>ks.filter(k=>k.id!==kidId));
+    }
+    // 'reset' keeps the account but wipes saved progress (fresh $1000 next login)
+  };
+
+  const Stars = () => {
+    const s=Array.from({length:20},(_,i)=>({id:i,sz:`${1+Math.random()*2}px`,top:`${Math.random()*100}%`,left:`${Math.random()*100}%`,dur:`${3+Math.random()*5}s`,del:`${Math.random()*5}s`}));
+    return <div className="stars">{s.map(x=><div key={x.id} className="star" style={{width:x.sz,height:x.sz,top:x.top,left:x.left,animationDuration:x.dur,animationDelay:x.del}}/>)}</div>;
+  };
+
+  return (
+    <>
+      <style>{CSS}</style>
+      <div className="app" style={{background:bg}}>
+        <Stars/>
+        {screen==="welcome"          && <Welcome      onNext={()=>setScreen("role_select")}/>}
+        {screen==="role_select"      && <RoleSelect   onKid={()=>setScreen("kid_profiles")} onParent={()=>enterTwoFA("parent_login")} onBack={()=>setScreen("welcome")}/>}
+        {screen==="kid_profiles"     && <KidProfiles  kids={kids} onSelect={k=>{setLoginKid(k);setScreen("kid_pin");}} onNew={()=>setScreen("kid_reg")} onBack={()=>setScreen("role_select")} onRestore={onRestore}/>}
+        {screen==="kid_reg"          && <KidRegister  regData={regData} setRegData={setRegData} onComplete={d=>{setRegData(d);enterTwoFA("kid_reg_2fa");}} onBack={()=>setScreen("kid_profiles")} setBgTheme={setBgTheme}/>}
+        {screen==="kid_reg_2fa"      && <TwoFA        email={regData.email} code={twoFACode} who={regData.name} isReg onVerified={()=>onKidReg(regData)} onBack={()=>setScreen("kid_reg")}/>}
+        {screen==="kid_pin"          && <PinScreen    kid={loginKid} onVerified={()=>enterTwoFA("kid_login_2fa")} onBack={()=>setScreen("kid_profiles")}/>}
+        {screen==="kid_login_2fa"    && <TwoFA        email={loginKid?.email} code={twoFACode} who={loginKid?.name} onVerified={()=>onKidLogin(loginKid)} onBack={()=>setScreen("kid_pin")}/>}
+        {screen==="parent_login"     && <ParentLogin  code={twoFACode} onVerified={()=>setScreen("parent_dash")} onBack={()=>setScreen("role_select")}/>}
+        {screen==="celebrate"        && <Celebrate    user={authUser}/>}
+        {screen==="kid_dash"         && <KidDash      user={authUser} savedState={savedState} onLogout={()=>{setAuthUser(null);setScreen("welcome");}}/>}
+        {screen==="parent_dash"      && <ParentDash   kids={kids} onResetKid={onResetKid} onLogout={()=>setScreen("welcome")}/>}
+      </div>
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// AUTH SCREENS
+// ═══════════════════════════════════════════════════
+function Welcome({onNext}){
+  return(
+    <div className="page">
+      <div className="card" style={{textAlign:"center"}}>
+        <div style={{fontSize:68,marginBottom:14,animation:"float 3s ease-in-out infinite",display:"block",filter:"drop-shadow(0 0 20px rgba(255,255,255,.2))"}}>🧸</div>
+        <div className="ttl" style={{fontSize:30}}>Toybox Trader</div>
+        <div className="sub">Learn to invest, grow your Money Garden, and beat your friends every month!</div>
+        <div style={{display:"flex",gap:7,justifyContent:"center",flexWrap:"wrap",marginBottom:20}}>
+          {["📈 Real skills","🎮 Game fun","🏆 Monthly winners","🔐 Super secure"].map(t=><div key={t} style={{fontSize:11,fontWeight:800,background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",padding:"4px 10px",borderRadius:100}}>{t}</div>)}
+        </div>
+        <button className="btn btn-w" onClick={onNext}>Get Started 🚀</button>
+      </div>
+    </div>
+  );
+}
+
+function RoleSelect({onKid,onParent,onBack}){
+  return(
+    <div className="page">
+      <div className="card">
+        <div className="ttl">Who are you? 👋</div>
+        <div className="sub" style={{marginBottom:18}}>Pick your role</div>
+        <div className="role-grid">
+          <button className="role-btn" onClick={onKid}><span className="role-icon">🧒</span><div className="role-title">I'm a Kid</div><div className="role-sub">Create or log into my account</div></button>
+          <button className="role-btn" onClick={onParent}><span className="role-icon">👔</span><div className="role-title">I'm a Parent</div><div className="role-sub">Manage my kids' accounts</div></button>
+        </div>
+        <button className="btn-link" onClick={onBack}>← Back</button>
+      </div>
+    </div>
+  );
+}
+
+function KidProfiles({kids,onSelect,onNew,onBack,onRestore}){
+  const [showRestore,setShowRestore]=useState(false);
+  const [code,setCode]=useState("");
+  const [err,setErr]=useState("");
+  const tryRestore=()=>{
+    const data=readBackupCode(code);
+    if(!data){ setErr("That code doesn't look right. Check you copied all of it."); return; }
+    onRestore(data);
+  };
+  return(
+    <div className="page">
+      <div className="card">
+        <div className="ttl">Who's playing? 🎮</div>
+        <div className="sub" style={{marginBottom:16}}>{kids.length===0?"No accounts yet — create yours!":"Tap your profile to log in"}</div>
+        <div className="profiles-grid">
+          {kids.map(k=>(
+            <button key={k.id} className="prof-card" onClick={()=>onSelect(k)}>
+              <span className="prof-av">{k.avatar}</span>
+              <div className="prof-nm">{k.name}</div>
+              <div className="prof-sub">Age {k.age}</div>
+            </button>
+          ))}
+          <button className="prof-card prof-new" onClick={onNew}>
+            <span style={{fontSize:34,opacity:.6}}>➕</span>
+            <div className="prof-nm" style={{color:"rgba(255,255,255,.55)",fontSize:12}}>Create account</div>
+          </button>
+        </div>
+        {!showRestore?(
+          <button className="btn-link" onClick={()=>setShowRestore(true)}>🔑 Restore from a backup code</button>
+        ):(
+          <div style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.12)",borderRadius:13,padding:13,marginTop:6}}>
+            <div style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,.75)",marginBottom:6}}>Paste your backup code</div>
+            <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.45)",lineHeight:1.5,marginBottom:8}}>Got a backup code from before? Paste it here to bring your whole account and progress back.</div>
+            <textarea className="inp" placeholder="TBX-..." value={code} onChange={e=>{setCode(e.target.value);setErr("");}} style={{minHeight:60,fontSize:12,fontFamily:"monospace",resize:"none"}}/>
+            {err&&<div style={{fontSize:11,fontWeight:700,color:"#fca5a5",marginBottom:6}}>{err}</div>}
+            <button className="btn btn-g" onClick={tryRestore} style={{marginTop:2}}>Restore my account 🔑</button>
+            <button className="btn-link" onClick={()=>setShowRestore(false)}>Cancel</button>
+          </div>
+        )}
+        <button className="btn-link" onClick={onBack}>← Back</button>
+      </div>
+    </div>
+  );
+}
+
+function KidRegister({regData,setRegData,onComplete,onBack,setBgTheme}){
+  const [step,setStep]=useState(0);
+  const [d,setD]=useState({name:"",avatar:"🚀",age:null,email:"",pin:"",pin2:"",theme:"space",...regData});
+  const [err,setErr]=useState("");
+  const upd=(k,v)=>setD(x=>({...x,[k]:v}));
+  const STEPS=["Your Name","Avatar","Your Age","Email","PIN","Theme"];
+  const next=()=>{
+    setErr("");
+    if(step===0&&!d.name.trim()) return setErr("Enter your name!");
+    if(step===2&&!d.age)         return setErr("Pick your age!");
+    if(step===3&&!d.email.includes("@")) return setErr("Enter a valid email!");
+    if(step===4&&d.pin.length<4) return setErr("Choose 4 digits!");
+    if(step===4&&d.pin!==d.pin2) return setErr("PINs don't match!");
+    if(step<5){setStep(s=>s+1);return;}
+    setRegData(d);onComplete(d);
+  };
+  return(
+    <div className="page">
+      <div className="card">
+        <div className="dots">{STEPS.map((_,i)=><div key={i} className={`dot ${i<=step?"on":""}`}/>)}</div>
+        <div style={{fontSize:11,color:"rgba(255,255,255,.4)",fontWeight:800,textAlign:"center",marginBottom:14,textTransform:"uppercase",letterSpacing:".5px"}}>Step {step+1}/{STEPS.length} · {STEPS[step]}</div>
+        {step===0&&<><div className="ttl">What's your name? 😊</div><div className="sub">This shows on the leaderboard</div><input className="inp" placeholder="e.g. Jamie, Zoe, Max..." value={d.name} onChange={e=>upd("name",e.target.value)} maxLength={20} autoFocus/>{d.name&&<div style={{fontSize:12,color:"rgba(255,255,255,.5)",fontWeight:700}}>Looking good, {d.name}! 👋</div>}</>}
+        {step===1&&<><div className="ttl">Pick your avatar! {d.avatar}</div><div className="sub" style={{marginBottom:12}}>Your trading identity</div><div className="av-grid">{AVATARS.map(a=><button key={a} className={`av-opt ${d.avatar===a?"sel":""}`} onClick={()=>upd("avatar",a)}>{a}</button>)}</div></>}
+        {step===2&&<><div className="ttl">How old are you? 🎂</div><div className="sub" style={{marginBottom:12}}>Personalises your learning</div><div className="age-grid">{[8,9,10,11,12,13,14,15,16,17].map(a=><button key={a} className={`age-btn ${d.age===a?"sel":""}`} onClick={()=>upd("age",a)}>{a}</button>)}</div></>}
+        {step===3&&<><div className="ttl">Your email address 📧</div><div className="sub" style={{marginBottom:10}}>We send a security code here every login</div><div className="sec-badge"><span style={{fontSize:18}}>🔐</span><span>This is <strong>Two-Factor Authentication (2FA)</strong>. Even if someone steals your PIN, they still can't log in without this code. Google, Apple and your bank all use it!</span></div><input className="inp" type="email" placeholder="your@email.com" value={d.email} onChange={e=>upd("email",e.target.value)}/></>}
+        {step===4&&<><div className="ttl">Create your PIN 🔒</div><div className="sub">4 digits only you know — don't use your birthday!</div><div className="lbl">Your PIN</div><input className="inp" type="password" inputMode="numeric" maxLength={4} placeholder="4 digits" value={d.pin} onChange={e=>upd("pin",e.target.value.replace(/\D/g,"").slice(0,4))}/><div className="lbl">Confirm PIN</div><input className="inp" type="password" inputMode="numeric" maxLength={4} placeholder="Type it again" value={d.pin2} onChange={e=>upd("pin2",e.target.value.replace(/\D/g,"").slice(0,4))}/>{d.pin.length===4&&d.pin===d.pin2&&<div style={{fontSize:12,fontWeight:800,color:"#86efac"}}>✅ PINs match!</div>}</>}
+        {step===5&&<><div className="ttl">Pick your theme! 🎨</div><div className="sub" style={{marginBottom:12}}>How your dashboard looks</div><div className="theme-grid">{THEMES.map(t=><button key={t.id} className={`theme-opt ${d.theme===t.id?"sel":""}`} style={{background:t.bg}} onClick={()=>{upd("theme",t.id);setBgTheme(t);}}><div className="theme-dot" style={{background:t.accent}}/><div className="theme-lbl">{t.label}</div></button>)}</div></>}
+        {err&&<div className="pin-err">{err}</div>}
+        <button className="btn btn-w" onClick={next} style={{marginTop:10}}>{step===5?"Create My Account! 🚀":"Next →"}</button>
+        <button className="btn-link" onClick={()=>step>0?setStep(s=>s-1):onBack()}>← Back</button>
+      </div>
+    </div>
+  );
+}
+
+function PinScreen({kid,onVerified,onBack}){
+  const [pin,setPin]=useState("");const [err,setErr]=useState(false);
+  const tap=d=>{if(pin.length>=4)return;const n=pin+d;setPin(n);if(n.length===4){if(n===kid.pin){setTimeout(onVerified,200);}else{setErr(true);setTimeout(()=>{setPin("");setErr(false);},900);}}};
+  const DIGITS=["1","2","3","4","5","6","7","8","9","","0","⌫"];
+  return(
+    <div className="page">
+      <div className="card" style={{textAlign:"center"}}>
+        <div style={{fontSize:50,marginBottom:8}}>{kid?.avatar}</div>
+        <div className="ttl">Hi, {kid?.name}! 👋</div>
+        <div className="sub">Enter your PIN</div>
+        <div className="pin-dots">{[0,1,2,3].map(i=><div key={i} className={`pin-dot ${i<pin.length?"filled":""}`}/>)}</div>
+        <div className="pin-grid">{DIGITS.map((d,i)=>d===""?<div key={i}/>:<button key={i} className={`pin-btn ${d==="⌫"?"del":""}`} onClick={()=>d==="⌫"?setPin(p=>p.slice(0,-1)):tap(d)}>{d}</button>)}</div>
+        {err&&<div className="pin-err">❌ Wrong PIN</div>}
+        <button className="btn-link" style={{marginTop:14}} onClick={onBack}>← Not {kid?.name}?</button>
+      </div>
+    </div>
+  );
+}
+
+function TwoFA({email,code,who,isReg,onVerified,onBack}){
+  const r=[useRef(null),useRef(null),useRef(null),useRef(null),useRef(null),useRef(null)];
+  const [vals,setVals]=useState(["","","","","",""]);
+  const [err,setErr]=useState("");
+  const [timer,setTimer]=useState(60);
+  useEffect(()=>{const id=setInterval(()=>setTimer(t=>t>0?t-1:0),1000);return()=>clearInterval(id);},[]);
+  const handle=(i,v)=>{if(!/^\d?$/.test(v))return;const n=[...vals];n[i]=v;setVals(n);if(v&&i<5)r[i+1].current?.focus();const joined=n.join("");if(joined.length===6){if(joined===code){setErr("");onVerified();}else setErr("Wrong code — check the email below!");}else setErr("");};
+  const keyDown=(i,e)=>{if(e.key==="Backspace"&&!vals[i]&&i>0)r[i-1].current?.focus();};
+  return(
+    <div className="page" style={{overflowY:"auto"}}>
+      <div className="card">
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <div style={{fontSize:42,marginBottom:8}}>📧</div>
+          <div className="ttl">{isReg?"Almost done!":"Check your email!"}</div>
+          <div className="sub">We sent a 6-digit code to<br/><strong style={{color:"#fff"}}>{email}</strong></div>
+        </div>
+        <div style={{background:"rgba(16,185,129,.1)",border:"1px solid rgba(16,185,129,.25)",borderRadius:13,padding:13,marginBottom:14,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.85)",lineHeight:1.6}}>
+          🔐 <strong>Why 2FA?</strong> Even if someone steals your PIN, they can't log in without this code. It's like having two locks on a door. Google, Apple and banks all use this!
+        </div>
+        <div style={{fontFamily:"var(--fd)",fontSize:11,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>Enter your 6-digit code</div>
+        <div className="twofa-row">{vals.map((v,i)=><input key={i} ref={r[i]} className={`twofa-inp ${v?"filled":""}`} value={v} maxLength={1} inputMode="numeric" onChange={e=>handle(i,e.target.value)} onKeyDown={e=>keyDown(i,e)}/>)}</div>
+        {err&&<div style={{textAlign:"center",fontSize:12,fontWeight:800,color:"#fca5a5",marginBottom:8}}>❌ {err}</div>}
+        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8}}>👇 Your simulated email (in real life this arrives in your inbox!)</div>
+        <div className="email-pop">
+          <div className="email-hd"><div className="email-logo">🧸</div><div><div style={{fontSize:11,fontWeight:800,color:"#fff"}}>Toybox Trader</div><div style={{fontSize:10,color:"rgba(255,255,255,.6)",fontWeight:600}}>noreply@toyboxtrader.com → {email}</div></div></div>
+          <div className="email-bd">
+            <div className="email-sub">🔐 Your Toybox Trader security code</div>
+            <div className="email-txt">Hi {who}! 👋 {isReg?"Almost done creating your account. Enter this code to verify your email:":"Here's your login security code:"}</div>
+            <div className="email-code-box"><div className="email-code">{code}</div><div style={{fontSize:10,fontWeight:700,color:"#9ca3af",marginTop:4}}>Expires in {timer}s · Don't share this with anyone</div></div>
+            <div className="email-foot">This is why 2FA matters — even if someone has your password, they don't have your email! 🔒</div>
+          </div>
+        </div>
+        <button className="btn-link" style={{marginTop:10}} onClick={onBack}>← Back</button>
+      </div>
+    </div>
+  );
+}
+
+function ParentLogin({code,onVerified,onBack}){
+  const [step,setStep]=useState(0);const [email,setEmail]=useState("");const [pin,setPin]=useState("");
+  if(step===1)return <TwoFA email={email} code={code} who="Parent" onVerified={onVerified} onBack={()=>setStep(0)}/>;
+  const tap=d=>{if(pin.length>=4)return;const n=pin+d;setPin(n);if(n.length===4){if(!email.includes("@")){setPin("");return;}setStep(1);}};
+  const DIGITS=["1","2","3","4","5","6","7","8","9","","0","⌫"];
+  return(
+    <div className="page">
+      <div className="card" style={{textAlign:"center"}}>
+        <div style={{fontSize:42,marginBottom:8}}>👔</div>
+        <div className="ttl">Parent Login</div>
+        <div className="sub">Email then 4-digit PIN</div>
+        <input className="inp" type="email" placeholder="your@email.com" value={email} onChange={e=>{setEmail(e.target.value);setPin("");}} style={{textAlign:"left",marginBottom:14}}/>
+        {email.includes("@")&&(<><div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.4)",marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>Enter PIN</div><div className="pin-dots">{[0,1,2,3].map(i=><div key={i} className={`pin-dot ${i<pin.length?"filled":""}`}/>)}</div><div className="pin-grid">{DIGITS.map((d,i)=>d===""?<div key={i}/>:<button key={i} className={`pin-btn ${d==="⌫"?"del":""}`} onClick={()=>d==="⌫"?setPin(p=>p.slice(0,-1)):tap(d)}>{d}</button>)}</div></>)}
+        <div style={{fontSize:11,color:"rgba(255,255,255,.3)",fontWeight:600,marginTop:10}}>Demo: any email + any 4-digit PIN</div>
+        <button className="btn-link" onClick={onBack}>← Back</button>
+      </div>
+    </div>
+  );
+}
+
+function Celebrate({user}){
+  const cols=["#f59e0b","#ec4899","#7c3aed","#10b981","#06b6d4","#ef4444"];
+  const conf=Array.from({length:26},(_,i)=>({id:i,col:cols[i%cols.length],left:`${Math.random()*100}%`,del:`${Math.random()*2}s`,dur:`${2+Math.random()*2}s`,w:`${7+Math.random()*8}px`,h:`${10+Math.random()*12}px`}));
+  return(
+    <div className="celebrate-ov">
+      <div className="conf-wrap">{conf.map(c=><div key={c.id} className="conf-p" style={{left:c.left,background:c.col,width:c.w,height:c.h,animationDuration:c.dur,animationDelay:c.del}}/>)}</div>
+      <div style={{fontSize:72,animation:"popUp .6s cubic-bezier(.34,1.56,.64,1)",position:"relative",zIndex:1}}>{user?.avatar}</div>
+      <div style={{fontFamily:"var(--fd)",fontSize:24,color:"#fff",textAlign:"center",position:"relative",zIndex:1}}>Welcome, {user?.name}! 🎉</div>
+      <div style={{fontSize:13,color:"rgba(255,255,255,.65)",fontWeight:700,textAlign:"center",lineHeight:1.7,maxWidth:280,position:"relative",zIndex:1}}>Account secured with 2FA! 🔐<br/>You have $1,000 to start investing.<br/>Complete lessons to earn MORE cash!</div>
+      <div style={{background:"rgba(245,158,11,.15)",border:"1px solid rgba(245,158,11,.3)",borderRadius:14,padding:"14px 22px",textAlign:"center",position:"relative",zIndex:1}}><div style={{fontFamily:"var(--fd)",fontSize:30,color:"#f59e0b"}}>💵 $1,000.00</div><div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.45)",marginTop:3}}>Your starting Money Garden</div></div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// KID DASHBOARD — all 12 features
+// ═══════════════════════════════════════════════════
+function KidDash({user,savedState,onLogout}){
+  const S = savedState || {};   // saved state (or empty for new accounts)
+  const [nav,      setNav]      = useState("Home");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreView, setMoreView] = useState("Ranks");
+
+  // Economy — restored from storage if available
+  const [cash,     setCash]     = useState(S.cash ?? 1000);
+  const [coins,    setCoins]    = useState(S.coins ?? (user?.coins||50));
+  const [xp,       setXp]       = useState(S.xp ?? (user?.xp||0));
+  const DAILY_TOKENS = 5;   // fresh trades each day
+  const [tokens,   setTokens]   = useState(S.tokens ?? DAILY_TOKENS);
+  const [tokenDay, setTokenDay] = useState(S.tokenDay || null);   // date tokens were last refilled
+  const [prices,   setPrices]   = useState({...INIT_PRICES});
+  const [portfolio,setPort]     = useState(S.portfolio || []);
+  const [trades,   setTrades]   = useState(S.trades || []);          // full trade history
+  const [lastValue,setLastValue]= useState(S.lastValue ?? null);     // value at last session
+  const [hydrated, setHydrated] = useState(false);                    // ready to save?
+
+  // Features — restored
+  const [streak,      setStreak]      = useState(S.streak ?? 1);                  // 1 — daily streak
+  const [lastSpin,    setLastSpin]    = useState(S.lastSpin ?? null);             // 5 — spin wheel
+  const [spinning,    setSpinning]    = useState(false);
+  const [spinDeg,     setSpinDeg]     = useState(0);
+  const [spinResult,  setSpinResult]  = useState(null);
+  const [invCards,    setInvCards]    = useState(S.invCards || []);               // 2 — collectible cards
+  const [alertToast,  setAlertToast]  = useState(null);                          // 3 — stock alerts
+  const [tradeAsset,  setTradeAsset]  = useState(null);                          // trade modal
+  const [tradeMode,   setTradeMode]   = useState("buy");
+  const [tradeQty,    setTradeQty]    = useState(1);
+  const [tradeTab,    setTradeTab]    = useState("all");
+  const [orderType,   setOrderType]   = useState("market");                      // market | limit
+  const [limitPrice,  setLimitPrice]  = useState(0);                             // target price for limit
+  const [pendingOrders,setPending]    = useState(S.pendingOrders || []);         // queued/limit orders
+  const [orderToast,  setOrderToast]  = useState(null);                          // "order filled!" toast
+  const [success,     setSuccess]     = useState(null);
+  const [cashReward,  setCashReward]  = useState(null);                          // lesson cash pop
+  const [lesson,       setLesson]      = useState(null);   // lesson modal
+  const [lessonSlide,  setLessonSlide] = useState(0);
+  const [lessonProgress,setLessonProg]= useState({});     // saved progress per lesson
+  const [slideTimer,   setSlideTimer] = useState(0);      // seconds on current slide
+  const [slideReady,   setSlideReady] = useState(false);  // can advance?
+  const [inQuiz,       setInQuiz]     = useState(false);  // showing the adventure level?
+  const [qIdx,         setQIdx]       = useState(0);      // current checkpoint index
+  const [qAnswer,      setQAnswer]    = useState(null);   // selected answer
+  const [qWrong,       setQWrong]     = useState(false);  // wrong this checkpoint?
+  const [hearts,       setHearts]     = useState(3);      // lives for this level
+  const [combo,        setCombo]      = useState(0);      // streak counter
+  const [buddyAnim,    setBuddyAnim]  = useState("idle"); // idle|hop|cheer|sad
+  const [coinBurst,    setCoinBurst]  = useState(false);  // coin fly animation
+  const [shake,        setShake]      = useState(false);  // screen shake
+  const [levelWon,     setLevelWon]   = useState(false);  // finished level
+  const [buddy,        setBuddy]      = useState(S.buddy || null);  // chosen starter id
+  const [pickBuddy,    setPickBuddy]  = useState(false);  // starter picker open
+  const [doneLesson,   setDoneLesson] = useState(S.doneLesson || []);
+  const [doneMission, setDoneMission] = useState(S.doneMission || []);
+  const [tourStep,    setTourStep]    = useState(1);
+  const [tourDone,    setTourDone]    = useState(false);
+  const [predictions, setPreds]       = useState(S.predictions || []);            // 10 — predictions
+  const [predSel,     setPredSel]     = useState(null);
+  const [clubPool,    setClubPool]    = useState(S.clubPool || {total:0,members:[]}); // 11 — investment club
+  const [clubAmt,     setClubAmt]     = useState(50);
+  const [challenge,   setChallenge]   = useState(null);                          // 6 — head-to-head
+  const [storyIdx,    setStoryIdx]    = useState(0);                             // 12 — daily story
+  const [reportOpen,  setReportOpen]  = useState(false);                         // 8 — report card
+  const [owned,       setOwned]       = useState(S.owned || []);                 // shop items owned
+  const [equipAvatar, setEquipAvatar] = useState(S.equipAvatar || null);         // equipped avatar emoji (overrides default)
+  const [equipTheme,  setEquipTheme]  = useState(S.equipTheme || null);          // equipped theme id (overrides default)
+  // Active look: equipped value wins, else the kid's original choice
+  const theme  = THEMES.find(t=>t.id===(equipTheme||user?.theme))||THEMES[0];
+  const avatar = equipAvatar || user?.avatar || "🚀";
+  const [shopMsg,     setShopMsg]     = useState(null);                          // shop purchase feedback
+  const [earnedBadges,setEarnedBadges]= useState(S.earnedBadges || []);          // achievement badges
+  const [newBadge,    setNewBadge]    = useState(null);                          // badge popup
+  const [goal,        setGoal]        = useState(S.goal ?? null);                // savings goal value
+  const [goalInput,   setGoalInput]   = useState(1500);
+  const [showInfo,    setShowInfo]    = useState(false);                         // XP/coin explainer
+  const [showOrderHelp,setShowOrderHelp]=useState(false);                        // limit-order explainer (replayable)
+  const [seenOrderHelp,setSeenOrderHelp]=useState(S.seenOrderHelp || false);     // first-time auto-show
+
+  const portVal    = portfolio.reduce((s,h)=>s+h.qty*(prices[h.ticker]||h.avgCost),0);
+  const totalValue = portVal+cash;
+  const startingCash = 1000 + doneLesson.reduce((s,id)=>s+(LESSONS.find(l=>l.id===id)?.cashReward||0),0);
+  const allTimeGain   = totalValue - 1000;
+  // Realised P&L = sum of profit/loss from completed sells
+  const realisedPnl = trades.filter(t=>t.side==="SELL"&&t.pnl!=null).reduce((s,t)=>s+t.pnl,0);
+  // Unrealised P&L = current holdings vs what was paid
+  const unrealisedPnl = portfolio.reduce((s,h)=>s+((prices[h.ticker]||h.avgCost)-h.avgCost)*h.qty,0);
+  // Since last visit
+  const sinceLastVisit = lastValue!=null ? totalValue - lastValue : null;
+
+  // Mark hydrated once mounted (lets us avoid saving on the very first render)
+  useEffect(()=>{ const t=setTimeout(()=>setHydrated(true),500); return()=>clearTimeout(t); },[]);
+
+  // ── Daily trade-token refill ──
+  // Tokens are a per-DAY allowance. Whenever it's a new calendar day (or a
+  // brand-new account with no record), top tokens back up to DAILY_TOKENS.
+  // Never reduces tokens (so buying Extra Trade Tokens still works).
+  useEffect(()=>{
+    const today = new Date().toDateString();
+    if(tokenDay !== today){
+      setTokens(t => Math.max(t, DAILY_TOKENS));
+      setTokenDay(today);
+    }
+  },[]);
+
+  // AUTO-SAVE: persist all state whenever anything important changes
+  useEffect(()=>{
+    if(!hydrated||!user?.id) return;
+    const snapshot = {cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastValue:totalValue,lastActive:Date.now()};
+    saveData(stateKey(user.id), snapshot);
+  },[cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,hydrated]);
+
+  // ── Check for newly-earned badges ──
+  useEffect(()=>{
+    if(!hydrated) return;
+    const lv=Math.floor(xp/500)+1;
+    const stats={
+      trades:trades.length,
+      lessons:doneLesson.length,
+      assets:portfolio.length,
+      value:totalValue,
+      profitableSells:trades.filter(t=>t.side==="SELL"&&t.pnl>0).length,
+      streak,cards:invCards.length,predictions:predictions.length,level:lv,
+    };
+    BADGES.forEach(b=>{
+      if(!earnedBadges.includes(b.id)&&b.check(stats)){
+        setEarnedBadges(e=>[...e,b.id]);
+        setNewBadge(b);
+        fx("reward",30);
+        setTimeout(()=>setNewBadge(null),3200);
+      }
+    });
+  },[trades,doneLesson,portfolio,totalValue,streak,invCards,predictions,xp,hydrated]);
+
+  // ── Backup / Restore ──
+  const [backupCode,setBackupCode]=useState(null);
+  const [copied,setCopied]=useState(false);
+  const generateBackup=()=>{
+    const account={id:user.id,name:user.name,avatar:user.avatar,age:user.age,email:user.email,pin:user.pin,theme:user.theme,joinedAt:user.joinedAt};
+    const state={cash,coins,xp,tokens,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,earnedBadges,goal,lastValue:totalValue,lastActive:Date.now()};
+    const code=makeBackupCode(account,state);
+    setBackupCode(code); setCopied(false); fx("reward",20);
+  };
+  const copyBackup=async()=>{
+    try{ await navigator.clipboard.writeText(backupCode); setCopied(true); fx("coin",15); setTimeout(()=>setCopied(false),2500); }catch(e){}
+  };
+
+  // ── Coin Shop purchase ──
+  const buyItem = (item) => {
+    if(coins < item.cost){ setShopMsg("Not enough coins! Earn more by trading and learning."); fx("wrong",20); setTimeout(()=>setShopMsg(null),2500); return; }
+    if(item.consumable){
+      if(item.id==="extra_token") setTokens(t=>t+1);
+    } else {
+      if(owned.includes(item.id)) return;
+      setOwned(o=>[...o,item.id]);
+      // Auto-equip avatars/themes the moment they're bought, so the change is visible immediately
+      if(item.type==="avatar") setEquipAvatar(item.icon);
+      if(item.type==="theme"){ const map={theme_neon:"neon",theme_ocean:"ocean"}; if(map[item.id]) setEquipTheme(map[item.id]); }
+    }
+    setCoins(c=>c-item.cost);
+    setShopMsg(`Bought ${item.name}! ${item.type==="avatar"?"Now wearing it! 🎉":item.type==="theme"?"Theme applied! 🎉":item.consumable?"":"🎉"}`);
+    fx("coin",25);
+    setTimeout(()=>setShopMsg(null),2500);
+  };
+
+  // Equip an already-owned avatar/theme (lets kids switch between ones they own)
+  const equipItem = (item) => {
+    if(item.type==="avatar") setEquipAvatar(item.icon);
+    if(item.type==="theme"){ const map={theme_neon:"neon",theme_ocean:"ocean"}; if(map[item.id]) setEquipTheme(map[item.id]); }
+    setShopMsg(`Now using ${item.name}! ✨`); fx("coin",15); setTimeout(()=>setShopMsg(null),2000);
+  };
+
+  // ── Real prices from Yahoo Finance + CoinGecko ──
+  const [priceSource,setPriceSource]=useState("simulated");
+  const fetchRealPrices=async()=>{
+    try{
+      const yUrl=`https://query1.finance.yahoo.com/v8/finance/spark?symbols=AAPL,RBLX,DIS,NVDA&range=1d&interval=5m`;
+      const proxy=`https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`;
+      const [s,c]=await Promise.all([
+        fetch(proxy,{signal:AbortSignal.timeout(6000)}),
+        fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd",{signal:AbortSignal.timeout(6000)}),
+      ]);
+      const upd={};
+      if(s.ok){const d=await s.json();(d?.spark?.result||[]).forEach(it=>{const last=(it.response?.[0]?.indicators?.quote?.[0]?.close||[]).filter(Boolean).pop();if(last>0)upd[it.symbol]=last;});}
+      if(c.ok){const cd=await c.json();if(cd.bitcoin?.usd)upd.BTC=cd.bitcoin.usd;if(cd.ethereum?.usd)upd.ETH=cd.ethereum.usd;}
+      if(Object.keys(upd).length){setPrices(p=>({...p,...upd}));setPriceSource("live");}
+    }catch(e){setPriceSource("simulated");}
+  };
+  useEffect(()=>{fetchRealPrices();const id=setInterval(fetchRealPrices,60000);return()=>clearInterval(id);},[]);
+
+  // Neutral random-walk simulation between fetches (no fake upward drift)
+  useEffect(()=>{
+    const id=setInterval(()=>setPrices(p=>{
+      const n={...p};
+      let triggered=null;
+      MARKET.forEach(a=>{
+        const vol=a.type==="crypto"?0.006:0.002;
+        const move=(Math.random()-0.5)*2*vol;
+        const prev=n[a.ticker];
+        n[a.ticker]=Math.max(0.01,prev*(1+move));
+        const chg=(n[a.ticker]-prev)/prev*100;
+        if(Math.abs(chg)>1.0&&!triggered&&portfolio.find(h=>h.ticker===a.ticker)){
+          triggered={name:a.name,icon:a.icon,chg,cur:n[a.ticker]};
+        }
+      });
+      if(triggered) setAlertToast(triggered);
+      return n;
+    }),3000);
+    return()=>clearInterval(id);
+  },[portfolio]);
+
+  // Dismiss alert after 5s
+  useEffect(()=>{if(!alertToast)return;const t=setTimeout(()=>setAlertToast(null),5000);return()=>clearTimeout(t);},[alertToast]);
+
+  // ── Market status (refreshed each minute) ──
+  const [mkt, setMkt] = useState(getMarketStatus());
+  useEffect(()=>{ const id=setInterval(()=>setMkt(getMarketStatus()),20000); return()=>clearInterval(id); },[]);
+
+  const openTrade=(asset,mode="buy")=>{
+    setTradeAsset(asset); setTradeMode(mode);
+    setTradeQty(asset.type==="crypto"?.1:1);
+    setOrderType("market");
+    setLimitPrice(+(prices[asset.ticker]||asset.basePrice).toFixed(2));
+  };
+
+  // Core fill logic — actually moves money & shares. Used by instant trades AND filled orders.
+  const fillOrder = ({ticker,name,type,icon,color,side,qty,price}) => {
+    const total = price*qty;
+    const heldPos = portfolio.find(p=>p.ticker===ticker);
+    const now=new Date();
+    const dateStr=now.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+    const timeStr=now.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
+    if(side==="buy"){
+      if(heldPos) setPort(prev=>prev.map(p=>p.ticker===ticker?{...p,qty:p.qty+qty,avgCost:(p.avgCost*p.qty+price*qty)/(p.qty+qty)}:p));
+      else setPort(prev=>[...prev,{ticker,name,type,qty,avgCost:price,icon,color}]);
+      setCash(c=>c-total);
+      setInvCards(cs=>[...cs,{id:Date.now()+Math.random(),ticker,name,icon,color,buyPrice:price,qty,earnedAt:dateStr,tier:"⬜ Common"}]);
+      setTrades(ts=>[{id:Date.now()+Math.random(),date:dateStr,time:timeStr,ticker,name,icon,side:"BUY",qty,price,total,pnl:null},...ts]);
+    } else {
+      const realised = (price-(heldPos?.avgCost||price))*qty;
+      const realisedPct = heldPos?.avgCost ? ((price-heldPos.avgCost)/heldPos.avgCost*100) : 0;
+      setPort(prev=>prev.map(p=>p.ticker===ticker?{...p,qty:+(p.qty-qty).toFixed(6)}:p).filter(p=>p.qty>0.000001));
+      setCash(c=>c+total);
+      setTrades(ts=>[{id:Date.now()+Math.random(),date:dateStr,time:timeStr,ticker,name,icon,side:"SELL",qty,price,total,pnl:realised,pnlPct:realisedPct.toFixed(1)},...ts]);
+    }
+    setXp(x=>x+50); setCoins(c=>c+10);
+  };
+
+  const execTrade=()=>{
+    if(!tradeAsset) return;
+    const isSell = tradeMode==="sell";
+    // Tokens only limit BUYING. Selling is always allowed so kids can manage what they own.
+    if(!isSell && tokens===0) return;
+    const livePrice=prices[tradeAsset.ticker]||tradeAsset.basePrice;
+    const isCrypto = tradeAsset.type==="crypto";
+    const total=livePrice*tradeQty;
+    // Basic validation
+    if(tradeMode==="buy" && (orderType==="market"?total:limitPrice*tradeQty) > cash) return;
+    const held=portfolio.find(p=>p.ticker===tradeAsset.ticker)?.qty||0;
+    if(isSell&&held<tradeQty)return;
+
+    const base={ticker:tradeAsset.ticker,name:tradeAsset.name,type:tradeAsset.type,icon:tradeAsset.icon,color:tradeAsset.color,side:tradeMode,qty:tradeQty};
+    // Only buys spend a token
+    const spendToken = ()=>{ if(!isSell) setTokens(t=>Math.max(0,t-1)); };
+
+    // CASE 1: Limit order → always queue (waits for target price)
+    if(orderType==="limit"){
+      setPending(o=>[{...base,id:Date.now(),kind:"limit",limitPrice:+limitPrice,placedAt:Date.now(),placed:new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short"})},...o]);
+      setOrderToast({type:"limit",name:tradeAsset.name,side:tradeMode,price:limitPrice});
+      spendToken();
+      fx("tap",12); setTradeAsset(null);
+      setTimeout(()=>setOrderToast(null),3500);
+      return;
+    }
+
+    // CASE 2: Market order on a CLOSED stock market → queue for next open
+    if(!isCrypto && !mkt.open){
+      setPending(o=>[{...base,id:Date.now(),kind:"queued",placedAt:Date.now(),placed:new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short"})},...o]);
+      setOrderToast({type:"queued",name:tradeAsset.name,side:tradeMode,when:mkt.nextOpenText});
+      spendToken();
+      fx("tap",12); setTradeAsset(null);
+      setTimeout(()=>setOrderToast(null),3500);
+      return;
+    }
+
+    // CASE 3: Instant fill (crypto anytime, or stock during open hours)
+    fillOrder({...base,price:livePrice});
+    spendToken();
+    setSuccess({mode:tradeMode,name:tradeAsset.name,icon:tradeAsset.icon,total});
+    fx(tradeMode==="buy"?"buy":"sell",18);
+    setTradeAsset(null);
+    setTimeout(()=>setSuccess(null),2000);
+  };
+
+  const cancelOrder = (id) => { setPending(o=>o.filter(x=>x.id!==id)); fx("tap",10); };
+
+  // ── ORDER MATCHING ENGINE ──
+  // Fills limit orders when target hit, and queued market orders once the market is open.
+  // Runs: on app open/login (sweep), when market flips open, and on every price tick.
+  // ── HISTORICAL BACKFILL ──
+  // On app open, scan REAL price history since each order was placed.
+  // If the kid's target was ever hit while the app was closed (e.g. at
+  // school), fill the order at the target price — even though "now" may
+  // have moved past it. This is the fair "set a smart limit and it
+  // triggers even if you weren't watching" behaviour.
+  const backfillOrders = async () => {
+    const open = pendingOrders;
+    if(!open || open.length===0) return;
+
+    // Group tickers we need history for
+    const tickers = [...new Set(open.map(o=>o.ticker))];
+    const history = {}; // ticker -> array of {t, lo, hi} candles
+
+    for(const tk of tickers){
+      const ord = open.find(o=>o.ticker===tk);
+      const since = ord.placedAt || (Date.now()-86400000); // default 1 day back
+      const isCrypto = ord.type==="crypto";
+      try {
+        if(isCrypto){
+          // CoinGecko market_chart: prices over range (free, CORS-friendly)
+          const id = tk==="BTC"?"bitcoin":"ethereum";
+          const days = Math.max(1, Math.ceil((Date.now()-since)/86400000));
+          const r = await fetch(`https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${days}`,{signal:AbortSignal.timeout(7000)});
+          if(r.ok){ const d=await r.json(); history[tk]=(d.prices||[]).filter(p=>p[0]>=since).map(p=>({t:p[0],lo:p[1],hi:p[1]})); }
+        } else {
+          // Yahoo Finance intraday via proxy: 5-min candles for the day
+          const yUrl=`https://query1.finance.yahoo.com/v8/finance/chart/${tk}?interval=5m&range=5d`;
+          const proxy=`https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`;
+          const r = await fetch(proxy,{signal:AbortSignal.timeout(8000)});
+          if(r.ok){
+            const d=await r.json();
+            const res=d?.chart?.result?.[0];
+            const ts=res?.timestamp||[];
+            const q=res?.indicators?.quote?.[0]||{};
+            const candles=[];
+            for(let i=0;i<ts.length;i++){
+              const tms=ts[i]*1000;
+              if(tms<since) continue;
+              const lo=q.low?.[i], hi=q.high?.[i];
+              if(lo!=null&&hi!=null) candles.push({t:tms,lo,hi});
+            }
+            history[tk]=candles;
+          }
+        }
+      } catch(e){ /* no history for this ticker — will fall through to live check */ }
+    }
+
+    // Decide fills from history
+    const fills=[]; const stillOpen=[];
+    open.forEach(ord=>{
+      const candles = history[ord.ticker];
+      if(!candles || candles.length===0){ stillOpen.push(ord); return; }
+      let hitPrice=null;
+      if(ord.kind==="limit"){
+        for(const c of candles){
+          // buy limit: filled if price dipped to/below target → fill AT target
+          if(ord.side==="buy" && c.lo<=ord.limitPrice){ hitPrice=ord.limitPrice; break; }
+          // sell limit: filled if price rose to/above target → fill AT target
+          if(ord.side==="sell" && c.hi>=ord.limitPrice){ hitPrice=ord.limitPrice; break; }
+        }
+      } else {
+        // queued market order: fills at the first available historical price after placing
+        hitPrice = candles[0] ? (candles[0].lo+candles[0].hi)/2 : null;
+      }
+      if(hitPrice!=null) fills.push({ord,fillPrice:hitPrice});
+      else stillOpen.push(ord);
+    });
+
+    if(fills.length>0){
+      fills.forEach(({ord,fillPrice})=>{
+        if(ord.side==="buy" && fillPrice*ord.qty>cash) return;
+        const held=portfolio.find(p=>p.ticker===ord.ticker)?.qty||0;
+        if(ord.side==="sell" && held<ord.qty) return;
+        fillOrder({ticker:ord.ticker,name:ord.name,type:ord.type,icon:ord.icon,color:ord.color,side:ord.side,qty:ord.qty,price:fillPrice});
+      });
+      const last=fills[fills.length-1];
+      setPending(stillOpen);
+      setOrderToast({type:"backfill",name:last.ord.name,side:last.ord.side,price:last.fillPrice,count:fills.length});
+      fx("reward",30);
+      setTimeout(()=>setOrderToast(null),5000);
+    }
+  };
+
+  // Run the historical backfill shortly after app open (once)
+  useEffect(()=>{ const t=setTimeout(()=>backfillOrders(),1800); return()=>clearTimeout(t); },[]);
+
+  const matchPendingOrders = () => {
+    setPending(prev=>{
+      if(prev.length===0) return prev;
+      const stillPending=[];
+      const filled=[];
+      prev.forEach(ord=>{
+        const isCrypto = ord.type==="crypto";
+        const live = prices[ord.ticker] ?? INIT_PRICES[ord.ticker];
+        if(live==null){ stillPending.push(ord); return; }
+        const marketAvailable = isCrypto || mkt.open;
+        if(ord.kind==="limit"){
+          const hit = ord.side==="buy" ? live<=ord.limitPrice : live>=ord.limitPrice;
+          if(hit && marketAvailable){ filled.push({ord,fillPrice:live}); }
+          else stillPending.push(ord);
+        } else { // queued market order
+          if(marketAvailable){ filled.push({ord,fillPrice:live}); }
+          else stillPending.push(ord);
+        }
+      });
+      if(filled.length>0){
+        filled.forEach(({ord,fillPrice})=>{
+          if(ord.side==="buy" && fillPrice*ord.qty>cash) return;
+          const held=portfolio.find(p=>p.ticker===ord.ticker)?.qty||0;
+          if(ord.side==="sell" && held<ord.qty) return;
+          fillOrder({ticker:ord.ticker,name:ord.name,type:ord.type,icon:ord.icon,color:ord.color,side:ord.side,qty:ord.qty,price:fillPrice});
+        });
+        const lastFill=filled[filled.length-1];
+        setOrderToast({type:"filled",name:lastFill.ord.name,side:lastFill.ord.side,price:lastFill.fillPrice,count:filled.length});
+        fx("reward",25);
+        setTimeout(()=>setOrderToast(null),4500);
+      }
+      return stillPending;
+    });
+  };
+
+  // Run on price changes and whenever market opens/closes
+  useEffect(()=>{ matchPendingOrders(); },[prices,mkt.open]);
+  // Sweep once shortly after app open / login — catches orders that should have filled while away
+  useEffect(()=>{ const t=setTimeout(()=>matchPendingOrders(),1200); return()=>clearTimeout(t); },[]);
+  // Safety net: re-check every 15s in case a tick was missed
+  useEffect(()=>{ const id=setInterval(()=>matchPendingOrders(),15000); return()=>clearInterval(id); },[prices,mkt.open,cash,portfolio]);
+
+  // Slide timer — resets each time slide changes
+  useEffect(()=>{
+    if(!lesson) return;
+    setSlideTimer(0); setSlideReady(false);
+    const tick = setInterval(()=>setSlideTimer(t=>{
+      if(t+1>=3) setSlideReady(true);
+      return t+1;
+    }),1000);
+    return()=>clearInterval(tick);
+  },[lessonSlide, lesson?.id]);
+
+  const openLesson = ls => {
+    const saved = lessonProgress[ls.id];
+    setLesson(ls);
+    setLessonSlide(saved?.slide||0);
+    setSlideReady(false); setSlideTimer(0);
+    setInQuiz(false); setQIdx(0); setQAnswer(null); setQWrong(false);
+    setHearts(3); setCombo(0); setBuddyAnim("idle"); setLevelWon(false);
+  };
+
+  const advanceSlide = () => {
+    if(!slideReady) return;
+    const next = lessonSlide+1;
+    setLessonProg(p=>({...p,[lesson.id]:{slide:next,seen:[...(p[lesson.id]?.seen||[]),lessonSlide]}}));
+    setLessonSlide(next);
+  };
+
+  // ── Adventure game (replaces quiz) ──
+  const startGame = () => {
+    // Need a buddy first
+    if(!buddy){ setPickBuddy(true); return; }
+    setInQuiz(true); setQIdx(0); setQAnswer(null); setQWrong(false);
+    setHearts(3); setCombo(0); setBuddyAnim("idle"); setLevelWon(false);
+  };
+
+  const answerGame = (i) => {
+    if(qAnswer!==null) return;       // already answered, wait
+    const q = lesson.quiz[qIdx];
+    setQAnswer(i);
+    if(i===q.correct){
+      // Correct → hop forward, coins burst, combo up
+      setQWrong(false);
+      setCombo(c=>c+1);
+      setBuddyAnim("hop");
+      setCoinBurst(true); fx("correct",15);
+      setTimeout(()=>setCoinBurst(false),700);
+      setTimeout(()=>{
+        if(qIdx < lesson.quiz.length-1){
+          setQIdx(x=>x+1); setQAnswer(null); setBuddyAnim("idle");
+        } else {
+          // Reached the goal → win + cheer
+          setBuddyAnim("cheer"); setLevelWon(true); fx("reward",30);
+          setTimeout(()=>completeLesson(lesson.id), 1600);
+        }
+      },800);
+    } else {
+      // Wrong → lose a heart, screen shake, buddy sad
+      setQWrong(true); setCombo(0);
+      setBuddyAnim("sad"); setShake(true); fx("wrong",30);
+      setTimeout(()=>setShake(false),420);
+      setHearts(h=>{
+        const left=h-1;
+        if(left<=0){
+          // Out of hearts → tumble back to checkpoint 1
+          setTimeout(()=>{ setQIdx(0); setQAnswer(null); setQWrong(false); setHearts(3); setCombo(0); setBuddyAnim("idle"); },1400);
+        }
+        return left;
+      });
+    }
+  };
+
+  const retryCheckpoint = () => { setQAnswer(null); setQWrong(false); setBuddyAnim("idle"); };
+  const reviewLesson = () => { setInQuiz(false); setLessonSlide(0); setSlideReady(false); setSlideTimer(0); setQAnswer(null); setQWrong(false); setLevelWon(false); };
+
+  const closeLesson = () => {
+    if(lesson) setLessonProg(p=>({...p,[lesson.id]:{...(p[lesson.id]||{}),slide:lessonSlide}}));
+    setLesson(null);
+  };
+
+  const completeLesson = id => {
+    const ls = LESSONS.find(l=>l.id===id);
+    if(!ls) return;
+    // Reward only granted after passing the quiz (called from answerQuiz)
+    if(!doneLesson.includes(id)){
+      const reward = ls.cashReward||50;
+      setDoneLesson(d=>[...d,id]); setXp(x=>x+200); setCoins(c=>c+50); setCash(c=>c+reward);
+      setLessonProg(p=>{const n={...p};delete n[id];return n;});
+      // Which lessons unlock a "try it now" action?
+      const tryMap = {
+        exit_strategy:{label:"🎯 Try a limit order",act:"limit"},
+        when_buy:{label:"🎯 Try buying on a dip",act:"limit"},
+        when_sell:{label:"🎯 Try a take-profit order",act:"limit"},
+        dca:{label:"⚡ Make your first buy",act:"trade"},
+        buy_hold:{label:"⚡ Buy something to hold",act:"trade"},
+        diversify_deep:{label:"⚡ Add a different asset",act:"trade"},
+        index:{label:"⚡ Go to the market",act:"trade"},
+        value_growth:{label:"⚡ Go find a bargain",act:"trade"},
+      };
+      setCashReward({amount:reward,lesson:ls.title,tryIt:tryMap[id]||null});
+      fx("reward",30);
+      // Auto-dismiss only if there's no "try it" button to tap
+      if(!tryMap[id]) setTimeout(()=>setCashReward(null),3500);
+    }
+    setLesson(null); setInQuiz(false);
+  };
+
+  const doSpin=()=>{
+    if(spinning||lastSpin===new Date().toDateString())return;
+    setSpinning(true);
+    const idx=Math.floor(Math.random()*SPIN_PRIZES.length);
+    const prize=SPIN_PRIZES[idx];
+    const deg=1440+(idx/SPIN_PRIZES.length)*360;
+    setSpinDeg(d=>d+deg);
+    setTimeout(()=>{
+      setSpinning(false);setLastSpin(new Date().toDateString());setSpinResult(prize);fx("coin",20);
+      if(prize.type==="coins")setCoins(c=>c+prize.val);
+      if(prize.type==="cash") setCash(c=>c+prize.val);
+      if(prize.type==="xp")   setXp(x=>x+prize.val);
+    },4100);
+  };
+
+  const startChallenge=sib=>{
+    setChallenge({sib,myGain:allTimeGain,sibGain:sib.portPnl,started:new Date().toLocaleDateString("en-GB"),ends:"May 25"});
+  };
+
+  const makePred=(asset,dir)=>{
+    const code=Math.floor(Math.random()*200+1);
+    setPreds(ps=>[...ps,{id:Date.now(),ticker:asset.ticker,name:asset.name,icon:asset.icon,dir,price:prices[asset.ticker]||asset.basePrice,resolves:"May 25",status:"open",correct:null}]);
+    setPredSel(null);setXp(x=>x+30);setCoins(c=>c+10);
+  };
+
+  const joinClub=(amt)=>{
+    if(amt>cash)return;
+    setCash(c=>c-amt);
+    setClubPool(p=>({total:p.total+amt,members:[...p.members,{name:user?.name||"You",avatar,amt}]}));
+  };
+
+  const MISSIONS=[
+    {id:"m1",icon:"📚",title:"Complete your first lesson",sub:"Tap Learn and start 'What is Investing?'",action:()=>setNav("Learn")},
+    {id:"m2",icon:"🧱",title:"Make your first trade",sub:"Tap Trade ⚡ and buy 1 Apple Building Block",action:()=>setNav("Trade")},
+    {id:"m3",icon:"🔮",title:"Make a price prediction",sub:"Tap the ••• menu → Predict",action:()=>{setMoreOpen(true);setMoreView("Predict");}},
+  ];
+
+  const TOUR_STEPS=[
+    {step:1,icon:"🧸",title:`Welcome, ${user?.name||""}! 🎉`,body:"You have $1,000 of pretend money. Grow it as big as possible before the end of the month. The kid with the biggest Money Garden WINS! 🏆",cta:"Show me around →"},
+    {step:2,icon:"📚",title:"ALWAYS learn first!",body:"Before trading a single dollar, complete at least the first lesson in Learn. Each lesson gives you REAL paper money added to your garden. Knowledge = more cash!",cta:"Got it →"},
+    {step:3,icon:"🎯",title:"Missions tell you what to do",body:"Your 3 daily missions give step-by-step instructions — exactly what to tap and where to go. Do Mission 1 first, then 2, then 3. The order matters!",cta:"OK! →"},
+    {step:4,icon:"🔧",title:"Your 5 tabs explained",body:"🏠 Home · ⚡ Trade · 📚 Learn · 💼 Assets · ••• More (Ranks, Cards, Challenges, Predictions, Club, Report Card!)",cta:"Let's start with Learn! 📚",goTo:"Learn"},
+  ];
+  const tourS=TOUR_STEPS.find(t=>t.step===tourStep);
+
+  const lv=Math.floor(xp/500)+1;
+  const toRealMoney=(n)=>{if(n>=999)return"a PS5 + 2 games";if(n>=500)return"an iPad case + 50 apps";if(n>=200)return"6 months of Spotify";if(n>=100)return"3 months of Netflix";if(n>=50)return"5 McDonald's meals";return`${Math.round(n*10)} Robux`;};
+
+  const petState=portVal===0?"😴":(portVal>portfolio.reduce((s,h)=>s+h.qty*h.avgCost,0)+50?"🥳":portVal<portfolio.reduce((s,h)=>s+h.qty*h.avgCost,0)-50?"😰":"😊");
+  const petMsg={
+    "😴":"I'm napping... wake me up by making your first trade! 💤",
+    "🥳":"WE'RE UP! Your investments are doing GREAT! Keep holding! 🚀",
+    "😰":"Down a bit... but don't panic! Good companies always come back. Breathe! 🧘",
+    "😊":"Looking healthy! Keep diversifying and checking the news! 📰",
+  }[petState];
+
+  const weekStats={best:portfolio.reduce((b,h)=>{const g=(prices[h.ticker]||h.avgCost)-h.avgCost;return g>b.g?{name:h.name,g}:b;},{name:"None",g:0}),trades:portfolio.length,gainPct:portVal>0?parseFloat(pct(portVal,portfolio.reduce((s,h)=>s+h.qty*h.avgCost,0))):0};
+  const reportGrade=weekStats.gainPct>=10?"A+":weekStats.gainPct>=5?"A":weekStats.gainPct>=0?"B":weekStats.gainPct>=-5?"C":"D";
+
+  const MORE_ITEMS=[
+    {id:"Shop",    icon:"🛍️",label:"Shop"},
+    {id:"Badges",  icon:"🏅",label:"Badges"},
+    {id:"Performance",icon:"📈",label:"P&L"},
+    {id:"Orders",  icon:"⏳",label:"Orders"},
+    {id:"Ranks",   icon:"🏆",label:"Ranks"},
+    {id:"Cards",   icon:"🎴",label:"Cards"},
+    {id:"Challenge",icon:"⚔️",label:"Battle"},
+    {id:"Predict", icon:"🔮",label:"Predict"},
+    {id:"Club",    icon:"🤝",label:"Club"},
+    {id:"Report",  icon:"📊",label:"Report"},
+    {id:"Backup",  icon:"💾",label:"Backup"},
+  ];
+
+  return(
+    <div className="dash">
+      {/* Order placed / filled toast */}
+      {orderToast&&(
+        <div style={{position:"fixed",top:0,left:0,right:0,zIndex:320,padding:"12px 16px",background:(orderToast.type==="filled"||orderToast.type==="backfill")?"rgba(4,120,87,.96)":"rgba(124,58,237,.96)",color:"#fff",animation:"slideDown .4s ease",display:"flex",alignItems:"center",gap:10}} onClick={()=>setOrderToast(null)}>
+          <span style={{fontSize:22}}>{orderToast.type==="filled"?"✅":orderToast.type==="backfill"?"🎯":orderToast.type==="limit"?"🎯":"⏰"}</span>
+          <div style={{flex:1,fontSize:13,fontWeight:800,lineHeight:1.4}}>
+            {orderToast.type==="filled"&&<>Order filled! {orderToast.side==="buy"?"Bought":"Sold"} {orderToast.name} at {fs$(orderToast.price)}{orderToast.count>1?` (+${orderToast.count-1} more)`:""} 🎉</>}
+            {orderToast.type==="backfill"&&<>While you were away, {orderToast.name} hit your target! {orderToast.side==="buy"?"Bought":"Sold"} at {fs$(orderToast.price)}{orderToast.count>1?` (+${orderToast.count-1} more)`:""} 🎯🎉</>}
+            {orderToast.type==="limit"&&<>Limit order placed! We'll {orderToast.side} {orderToast.name} when it hits {fs$(orderToast.price)}. Check ••• → Orders.</>}
+            {orderToast.type==="queued"&&<>Order queued! {orderToast.name} will {orderToast.side} at next open ({orderToast.when}). Check ••• → Orders.</>}
+          </div>
+          <span style={{fontSize:14,opacity:.6}}>✕</span>
+        </div>
+      )}
+
+      {/* Stock alert toast */}
+      {alertToast&&(
+        <div className={`alert-toast ${alertToast.chg>0?"up":"dn"}`} onClick={()=>setAlertToast(null)}>
+          <span style={{fontSize:20}}>{alertToast.icon}</span>
+          <div style={{flex:1}}>
+            <strong>{alertToast.name}</strong>{" "}is {alertToast.chg>0?"UP":"DOWN"}{" "}{Math.abs(alertToast.chg).toFixed(1)}{"% "}
+            {portfolio.find(h=>h.ticker===alertToast.ticker)&&<span>{"— your investment "}{alertToast.chg>0?"gained":"lost"}{" "}{fs$(Math.abs(alertToast.chg/100*(portfolio.find(h=>h.ticker===alertToast.ticker)?.qty||0)*(alertToast.cur||0)))}{"!"}</span>}
+          </div>
+          <span style={{fontSize:14,opacity:.6}}>✕</span>
+        </div>
+      )}
+
+      {/* Topbar */}
+      <div className="topbar" style={{paddingTop:alertToast?"50px":undefined,transition:"padding .3s"}}>
+        <div className="tb-av">{avatar}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div className="tb-name">Hey, {user?.name}! 👋</div>
+          <div className="tb-sub">Lv{lv} · {mkt.open?"🟢 Mkt open":"🔴 Mkt closed"}{pendingOrders.length>0?` · ⏳${pendingOrders.length}`:""} · {priceSource==="live"?"Live":"Sim"}</div>
+        </div>
+        <div className="tb-right">
+          <div className="tb-chip fire">🔥 {streak}d</div>
+          <div className="tb-chip gold">🪙{coins}</div>
+          <div className="tb-chip">{fs$(totalValue)}</div>
+          <button onClick={()=>{setTourStep(1);setTourDone(false);}} style={{width:30,height:30,borderRadius:"50%",border:"1px solid rgba(255,255,255,.2)",background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.6)",fontSize:13,cursor:"pointer",flexShrink:0}}>❓</button>
+        </div>
+      </div>
+
+      {/* Main */}
+      <div className="main">
+
+        {/* HOME */}
+        {nav==="Home"&&(
+          <div>
+            {/* Welcome back — since last visit */}
+            {sinceLastVisit!=null&&Math.abs(sinceLastVisit)>=0.01&&(
+              <div style={{background:sinceLastVisit>=0?"rgba(16,185,129,.12)":"rgba(239,68,68,.1)",border:`1px solid ${sinceLastVisit>=0?"rgba(16,185,129,.3)":"rgba(239,68,68,.3)"}`,borderRadius:14,padding:"12px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:22}}>{sinceLastVisit>=0?"📈":"📉"}</span>
+                <div>
+                  <div style={{fontFamily:"var(--fd)",fontSize:14,color:sinceLastVisit>=0?"#86efac":"#fca5a5"}}>Welcome back, {user?.name}!</div>
+                  <div style={{fontSize:11,color:"rgba(255,255,255,.6)",fontWeight:600,marginTop:1}}>Since last time, your garden is {sinceLastVisit>=0?"UP":"DOWN"} {f$(Math.abs(sinceLastVisit))}{sinceLastVisit>=0?" 🎉":" — markets move, stay calm!"}</div>
+                </div>
+              </div>
+            )}
+            {/* Pet mascot — feature 7 */}
+            <div className="pet-card" style={{borderColor:`${theme.accent}44`,background:`${theme.card}`}}>
+              <div className="pet-em">{petState}</div>
+              <div style={{flex:1}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff",marginBottom:4}}>Your Trading Buddy</div>
+                <div className="pet-bubble">{petMsg}</div>
+              </div>
+            </div>
+
+            {/* Money Garden */}
+            <div style={{background:`linear-gradient(135deg,${theme.accent}33,${theme.accent}11)`,border:`1px solid ${theme.accent}44`,borderRadius:20,padding:20,marginBottom:12,textAlign:"center"}}>
+              <div style={{fontSize:54,animation:"float 3s ease-in-out infinite",display:"block",marginBottom:8,filter:`drop-shadow(0 0 16px ${theme.accent}88)`}}>🌱</div>
+              <div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.45)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>Your Money Garden</div>
+              <div style={{fontFamily:"var(--fd)",fontSize:34,color:"#fff",textShadow:`0 0 20px ${theme.accent}88`}}>{f$(totalValue)}</div>
+              <div style={{fontSize:12,color:"rgba(255,255,255,.5)",fontWeight:700,marginTop:4}}>💵 {f$(cash)} cash · 📊 {f$(portVal)} invested</div>
+              {/* Real money comparison — feature 4 */}
+              {allTimeGain!==0&&(
+                <div style={{marginTop:10,background:"rgba(255,255,255,.08)",borderRadius:12,padding:"8px 14px",fontSize:12,fontWeight:700,color:allTimeGain>0?"#86efac":"#fca5a5"}}>
+                  {allTimeGain>0?"📈 UP":"📉 DOWN"} {f$(Math.abs(allTimeGain))} this month
+                  {allTimeGain>0&&<div style={{fontSize:11,color:"rgba(255,255,255,.45)",marginTop:2}}>💡 If this were real money: enough for {toRealMoney(allTimeGain)}!</div>}
+                </div>
+              )}
+            </div>
+
+            {/* Goal setting */}
+            {goal==null?(
+              <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,padding:14,marginBottom:12}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff",marginBottom:4}}>🎯 Set a Goal!</div>
+                <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.5)",marginBottom:10,lineHeight:1.5}}>Pick a target for your Money Garden. Watching the bar fill up makes investing fun!</div>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                  <span style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,.6)"}}>Grow to:</span>
+                  <input type="range" min={1200} max={3000} step={100} value={goalInput} onChange={e=>setGoalInput(+e.target.value)} style={{flex:1,accentColor:theme.accent}}/>
+                  <span style={{fontFamily:"var(--fd)",fontSize:16,color:theme.accent,minWidth:60}}>{f$(goalInput).replace(".00","")}</span>
+                </div>
+                <button onClick={()=>{setGoal(goalInput);fx("tap",10);}} style={{width:"100%",padding:"11px",borderRadius:12,border:"none",background:`linear-gradient(135deg,${theme.accent},${theme.accent}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>🎯 Set my goal</button>
+              </div>
+            ):(
+              <div style={{background:totalValue>=goal?"rgba(16,185,129,.12)":"rgba(255,255,255,.06)",border:`1px solid ${totalValue>=goal?"rgba(16,185,129,.3)":"rgba(255,255,255,.1)"}`,borderRadius:14,padding:14,marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <span style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>🎯 Goal: {f$(goal).replace(".00","")}</span>
+                  <button onClick={()=>setGoal(null)} style={{background:"none",border:"none",color:"rgba(255,255,255,.4)",fontSize:11,fontWeight:700,cursor:"pointer"}}>change</button>
+                </div>
+                <div style={{height:10,background:"rgba(255,255,255,.08)",borderRadius:100,overflow:"hidden",marginBottom:6}}>
+                  <div style={{height:"100%",width:`${Math.min(100,(totalValue/goal)*100)}%`,background:totalValue>=goal?"linear-gradient(90deg,#10b981,#34d399)":`linear-gradient(90deg,${theme.accent},#fff)`,borderRadius:100,transition:"width .6s"}}/>
+                </div>
+                <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.55)"}}>
+                  {totalValue>=goal?"🎉 GOAL REACHED! Amazing investing! Set a bigger one?":`${Math.round((totalValue/goal)*100)}% there · ${f$(goal-totalValue)} to go!`}
+                </div>
+              </div>
+            )}
+
+            {/* XP bar with info button */}
+            <div style={{background:"rgba(255,255,255,.06)",borderRadius:13,padding:"10px 14px",marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:10,fontWeight:800,color:"rgba(255,255,255,.45)",marginBottom:5}}>
+                <span>⚡ Level {lv} Investor</span>
+                <button onClick={()=>setShowInfo(true)} style={{background:"rgba(255,255,255,.1)",border:"none",borderRadius:8,padding:"3px 8px",color:"rgba(255,255,255,.6)",fontSize:10,fontWeight:800,cursor:"pointer"}}>❓ What's XP & coins?</button>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,fontWeight:800,color:"rgba(255,255,255,.35)",marginBottom:5}}><span>{xp} XP</span><span>Next level: {lv*500} XP</span></div>
+              <div style={{height:6,background:"rgba(255,255,255,.08)",borderRadius:100,overflow:"hidden"}}><div style={{height:"100%",width:`${(xp%(lv*500===0?500:lv*500))/(lv*500===0?500:lv*500)*100}%`,background:`linear-gradient(90deg,${theme.accent},#fff)`,borderRadius:100,transition:"width .5s"}}/></div>
+            </div>
+
+            {/* Daily spin — feature 5 */}
+            {lastSpin!==new Date().toDateString()&&(
+              <div style={{background:"linear-gradient(135deg,rgba(124,58,237,.15),rgba(245,158,11,.08))",border:"2px solid rgba(124,58,237,.35)",borderRadius:16,padding:16,marginBottom:12,textAlign:"center"}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>🎡 Daily Spin!</div>
+                <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",marginBottom:12}}>Spin once per day for coins, cash or rare cards!</div>
+                <div className="wheel-wrap">
+                  <div className="wheel-pointer">▼</div>
+                  <div className="wheel" style={{transform:`rotate(${spinDeg}deg)`,background:`conic-gradient(${SPIN_PRIZES.map((p,i)=>`${["#7c3aed","#f59e0b","#06b6d4","#ec4899","#10b981","#ef4444","#8b5cf6","#f97316"][i]} ${i/SPIN_PRIZES.length*360}deg ${(i+1)/SPIN_PRIZES.length*360}deg`).join(",")})`}}>
+                    {SPIN_PRIZES.map((p,i)=>(
+                      <div key={i} style={{position:"absolute",top:"50%",left:"50%",transform:`rotate(${(i+.5)/SPIN_PRIZES.length*360}deg) translateY(-75px) translateX(-50%)`,fontSize:14,fontWeight:800,color:"#fff",textShadow:"0 1px 3px rgba(0,0,0,.5)",whiteSpace:"nowrap"}}>{p.icon}</div>
+                    ))}
+                  </div>
+                </div>
+                <button className="spin-btn" onClick={doSpin} disabled={spinning}>{spinning?"Spinning...":"🎡 Spin!"}</button>
+                {spinResult&&<div style={{marginTop:10,fontFamily:"var(--fd)",fontSize:16,color:"#f59e0b"}}>You won: {spinResult.icon} {spinResult.label}!</div>}
+              </div>
+            )}
+
+            {/* Daily story — feature 12 */}
+            <div style={{background:`linear-gradient(135deg,${DAILY_STORIES[storyIdx].color}22,${DAILY_STORIES[storyIdx].color}08)`,border:`1px solid ${DAILY_STORIES[storyIdx].color}33`,borderRadius:16,padding:16,marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <span style={{fontSize:24}}>{DAILY_STORIES[storyIdx].icon}</span>
+                <div>
+                  <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:".5px"}}>📰 Today's Market Story</div>
+                  <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{DAILY_STORIES[storyIdx].title}</div>
+                </div>
+                <button onClick={()=>setStoryIdx(i=>(i+1)%DAILY_STORIES.length)} style={{marginLeft:"auto",background:"rgba(255,255,255,.1)",border:"none",borderRadius:8,padding:"5px 9px",color:"rgba(255,255,255,.6)",cursor:"pointer",fontSize:11,fontWeight:800,flexShrink:0}}>Next →</button>
+              </div>
+              <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.65,marginBottom:8}}>{DAILY_STORIES[storyIdx].body}</div>
+              <div style={{fontSize:11,fontWeight:800,color:DAILY_STORIES[storyIdx].color,background:`${DAILY_STORIES[storyIdx].color}22`,borderRadius:8,padding:"6px 10px"}}>{DAILY_STORIES[storyIdx].lesson}</div>
+            </div>
+
+            {/* Missions */}
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+              <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>🎯 Today's Missions</div>
+              <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.4)"}}>{doneMission.length}/3 done</div>
+            </div>
+            {doneMission.length===0&&<div style={{background:"rgba(124,58,237,.12)",border:"1px solid rgba(124,58,237,.3)",borderRadius:12,padding:"10px 13px",marginBottom:10,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.8)",lineHeight:1.5}}>👆 <strong style={{color:"#fff"}}>Start with Mission 1</strong> — tap it to see step-by-step instructions!</div>}
+            {MISSIONS.map((m,mi)=>{
+              const done=doneMission.includes(m.id);
+              const isNext=!done&&MISSIONS.slice(0,mi).every(pm=>doneMission.includes(pm.id));
+              return(
+                <div key={m.id} style={{background:done?"rgba(16,185,129,.08)":isNext?"rgba(255,255,255,.09)":"rgba(255,255,255,.04)",border:done?"2px solid rgba(16,185,129,.35)":isNext?"2px solid rgba(255,255,255,.22)":"2px solid rgba(255,255,255,.07)",borderRadius:15,padding:14,marginBottom:9,transition:"all .2s"}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                    <div style={{width:34,height:34,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--fd)",fontSize:done?16:14,background:done?"rgba(16,185,129,.2)":isNext?"rgba(255,255,255,.18)":"rgba(255,255,255,.06)",color:done?"#86efac":isNext?"#fff":"rgba(255,255,255,.25)",border:done?"2px solid rgba(16,185,129,.45)":isNext?"2px solid rgba(255,255,255,.35)":"2px solid rgba(255,255,255,.08)"}}>{done?"✅":mi+1}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:"var(--fd)",fontSize:14,color:done?"#86efac":isNext?"#fff":"rgba(255,255,255,.35)",marginBottom:3}}>{m.title}</div>
+                      <div style={{fontSize:11,color:done?"rgba(134,239,172,.65)":"rgba(255,255,255,.45)",fontWeight:600,lineHeight:1.5}}>{done?"Complete! ✅":m.sub}</div>
+                      {isNext&&!done&&<button onClick={m.action} style={{marginTop:10,padding:"8px 18px",borderRadius:100,border:"none",background:`linear-gradient(135deg,${theme.accent},${theme.accent}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>Do it now →</button>}
+                    </div>
+                    {!done&&!isNext&&<span style={{fontSize:18,opacity:.35}}>🔒</span>}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Live market preview */}
+            <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",margin:"14px 0 10px"}}>📊 Live Market</div>
+            {MARKET.slice(0,4).map(a=>{
+              const cur=prices[a.ticker]||a.basePrice;
+              const chg=parseFloat(pct(cur,a.basePrice));
+              return(
+                <div key={a.ticker} onClick={()=>openTrade(a)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.09)",borderRadius:13,cursor:"pointer",marginBottom:8}}>
+                  <div style={{width:36,height:36,borderRadius:10,background:a.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{a.icon}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:800,fontSize:13,color:"#fff"}}>{a.name}</div>
+                    <div style={{fontSize:10,color:"rgba(255,255,255,.45)",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.tagline}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontWeight:800,fontSize:13,color:"#fff"}}>{fs$(cur)}</div>
+                    <div style={{fontSize:10,fontWeight:800,color:chg>=0?"#86efac":"#fca5a5"}}>{chg>=0?"▲":"▼"}{Math.abs(chg)}%</div>
+                  </div>
+                </div>
+              );
+            })}
+            <button onClick={onLogout} style={{width:"100%",marginTop:16,padding:"11px",borderRadius:13,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"rgba(255,255,255,.3)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>🚪 Log out</button>
+          </div>
+        )}
+
+        {/* TRADE */}
+        {nav==="Trade"&&(
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:10,background:tokens>0?"rgba(16,185,129,.1)":"rgba(245,158,11,.12)",border:`1px solid ${tokens>0?"rgba(16,185,129,.25)":"rgba(245,158,11,.3)"}`,borderRadius:13,padding:"10px 13px",marginBottom:12}}>
+              <span style={{fontSize:20}}>🎟️</span>
+              <div style={{flex:1,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.8)",lineHeight:1.4}}>
+                {tokens>0
+                  ?<>You have <strong style={{color:"#86efac"}}>{tokens} buy{tokens!==1?"s":""}</strong> left today ({DAILY_TOKENS} fresh each day). Selling is always free! 🎟️</>
+                  :<>No buys left today — <strong style={{color:"#fde68a"}}>{DAILY_TOKENS} fresh ones arrive tomorrow</strong>. You can still SELL anytime, and your {fs$(cash)} is safe.</>}
+              </div>
+            </div>
+            <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:13,padding:12,marginBottom:14,fontSize:12,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.6}}>
+              💡 Read the news inside each card. Start with 🟢 lower risk Building Blocks before trying 🔴 Collector Cards (crypto). Tap any card to see what could happen to your money!
+            </div>
+            <div style={{display:"flex",gap:7,marginBottom:13,overflowX:"auto",scrollbarWidth:"none"}}>
+              {[["all","🌐 All"],["stock","🧱 Blocks"],["crypto","🃏 Cards"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setTradeTab(k)} style={{padding:"7px 14px",borderRadius:100,border:`1.5px solid ${tradeTab===k?"rgba(255,255,255,.4)":"rgba(255,255,255,.14)"}`,background:tradeTab===k?"rgba(255,255,255,.14)":"transparent",color:tradeTab===k?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>{l}</button>
+              ))}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {MARKET.filter(a=>tradeTab==="all"||a.type===tradeTab).map(a=>{
+                const cur=prices[a.ticker]||a.basePrice;const chg=parseFloat(pct(cur,a.basePrice));
+                return(
+                  <div key={a.ticker} onClick={()=>openTrade(a)} style={{borderRadius:14,padding:14,cursor:"pointer",position:"relative",overflow:"hidden",background:`linear-gradient(135deg,${a.color}bb,${a.color}55)`,border:`1px solid ${a.color}44`,transition:"all .2s"}}>
+                    <div style={{position:"absolute",top:9,right:9,fontSize:9,fontWeight:800,background:"rgba(0,0,0,.25)",padding:"2px 7px",borderRadius:100,color:"rgba(255,255,255,.75)",textTransform:"uppercase"}}>{a.type==="stock"?"Block":"Card"}</div>
+                    <div style={{fontSize:28,marginBottom:4,display:"block"}}>{a.icon}</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:13,color:"#fff",marginBottom:2}}>{a.name}</div>
+                    <div style={{fontSize:9,color:"rgba(255,255,255,.55)",fontWeight:600,marginBottom:7,lineHeight:1.3}}>{a.tagline}</div>
+                    <div style={{fontSize:14,fontWeight:900,color:"#fff"}}>{fs$(cur)}</div>
+                    <div style={{fontSize:10,fontWeight:700,marginTop:2,color:chg>=0?"#86efac":"#fca5a5"}}>{chg>=0?"▲":"▼"} {Math.abs(chg)}%</div>
+                    <div style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:100,marginTop:5,display:"inline-block",background:a.risk==="low"?"rgba(16,185,129,.25)":a.risk==="medium"?"rgba(245,158,11,.25)":"rgba(239,68,68,.25)",color:a.risk==="low"?"#86efac":a.risk==="medium"?"#fde68a":"#fca5a5"}}>{a.risk==="low"?"🟢 Lower Risk":a.risk==="medium"?"🟠 Medium Risk":"🔴 High Risk"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* LEARN — adventure map */}
+        {nav==="Learn"&&(
+          <div>
+            <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.12),rgba(245,158,11,.04))",border:"1.5px solid rgba(245,158,11,.3)",borderRadius:16,padding:16,marginBottom:18}}>
+              <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#f59e0b",marginBottom:6}}>💵 Learn to Earn — Real Trading Cash!</div>
+              <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.6,marginBottom:12}}>Complete lessons to earn <strong style={{color:"#fff"}}>paper money deposited into your Money Garden</strong>. Knowledge = more capital to trade!</div>
+              <div style={{display:"flex",gap:8}}>
+                <div style={{background:"rgba(245,158,11,.15)",borderRadius:10,padding:"8px 12px",textAlign:"center"}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:17,color:"#f59e0b"}}>{fs$(LESSONS.filter(l=>doneLesson.includes(l.id)).reduce((s,l)=>s+l.cashReward,0))}</div>
+                  <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",marginTop:1}}>EARNED</div>
+                </div>
+                <div style={{background:"rgba(255,255,255,.06)",borderRadius:10,padding:"8px 12px",textAlign:"center"}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:17,color:"rgba(255,255,255,.55)"}}>{fs$(LESSONS.filter(l=>!doneLesson.includes(l.id)).reduce((s,l)=>s+l.cashReward,0))}</div>
+                  <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",marginTop:1}}>AVAILABLE</div>
+                </div>
+                <div style={{background:"rgba(255,255,255,.06)",borderRadius:10,padding:"8px 12px",textAlign:"center"}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:17,color:"#06b6d4"}}>{doneLesson.length}/{LESSONS.length}</div>
+                  <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",marginTop:1}}>DONE</div>
+                </div>
+              </div>
+            </div>
+            {/* Adventure map */}
+            <div className="map-wrap">
+              <div className="map-path"/>
+              {LESSONS.map((ls,i)=>{
+                const done=doneLesson.includes(ls.id);
+                const curr=!done&&doneLesson.length===i;
+                const locked=!done&&!curr;
+                const isRight=i%2===1;
+                return(
+                  <div key={ls.id} className={`map-node ${isRight?"right":""}`}>
+                    <div className={`map-circle ${done?"done":curr?"curr":"lock"}`}>{done?"✅":ls.icon}</div>
+                    <div className={`map-content ${done?"done":curr?"curr":""}`} style={{opacity:locked?.5:1}}>
+                      <div className="map-island">{ls.island}</div>
+                      <div className="map-title" style={{color:locked?"rgba(255,255,255,.4)":"#fff"}}>{ls.title}</div>
+                      <div className="map-rewards">
+                        <div className="map-rew-chip" style={{background:"rgba(245,158,11,.15)",color:"#f59e0b"}}>💵 +{fs$(ls.cashReward)}</div>
+                        <div className="map-rew-chip" style={{background:"rgba(6,182,212,.12)",color:"#67e8f9"}}>⚡ +200 XP</div>
+                        <div className="map-rew-chip" style={{background:"rgba(245,158,11,.1)",color:"#fde68a"}}>🪙 +50</div>
+                      </div>
+                      {done&&<div style={{fontSize:11,fontWeight:800,color:"#86efac"}}>✅ Completed! Cash deposited!</div>}
+                      {curr&&<button onClick={()=>openLesson(ls)} style={{padding:"9px 18px",borderRadius:100,border:"none",background:`linear-gradient(135deg,${ls.color},${ls.color}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer",boxShadow:`0 3px 10px ${ls.color}44`}}>Sail here &amp; earn {fs$(ls.cashReward)} →</button>}
+                      {locked&&<div style={{fontSize:11,color:"rgba(255,255,255,.3)",fontWeight:600}}>🔒 Complete previous island first</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ASSETS */}
+        {nav==="Assets"&&(
+          <div>
+            {portfolio.length===0?(
+              <div style={{textAlign:"center",padding:"48px 20px"}}>
+                <div style={{fontSize:54,marginBottom:14}}>💼</div>
+                <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",marginBottom:8}}>Your portfolio is empty!</div>
+                <div style={{fontSize:13,color:"rgba(255,255,255,.55)",fontWeight:600,lineHeight:1.6,marginBottom:20}}>Head to Trade ⚡ and make your first investment!</div>
+                <button onClick={()=>setNav("Trade")} style={{padding:"13px 28px",borderRadius:14,border:"none",background:`linear-gradient(135deg,${theme.accent},${theme.accent}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer"}}>⚡ Go to Trade</button>
+              </div>
+            ):(
+              <div>
+                <div style={{display:"flex",gap:10,marginBottom:14,overflowX:"auto",scrollbarWidth:"none"}}>
+                  {[["Total",f$(totalValue),theme.accent],["Invested",f$(portVal),"#f59e0b"],["Cash",f$(cash),"#10b981"]].map(([l,v,c])=>(
+                    <div key={l} style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.1)",borderRadius:13,padding:"12px 14px",flexShrink:0,minWidth:110}}>
+                      <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:".4px",marginBottom:2}}>{l}</div>
+                      <div style={{fontFamily:"var(--fd)",fontSize:18,color:c}}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+                {portfolio.length<3&&<div style={{background:"rgba(194,65,12,.08)",border:"1px solid rgba(194,65,12,.2)",borderRadius:12,padding:"11px 13px",marginBottom:14,fontSize:12,fontWeight:700,color:"#fdba74",lineHeight:1.5}}>🧺 You own {portfolio.length} asset{portfolio.length!==1?"s":""}. Try to own 3-5 — like candy in multiple pockets!</div>}
+                {portfolio.map(h=>{
+                  const cur=prices[h.ticker]||h.avgCost;
+                  const pnl=(cur-h.avgCost)*h.qty;const pp=parseFloat(pct(cur,h.avgCost));
+                  const a=MARKET.find(m=>m.ticker===h.ticker);
+                  const advice=pp>=15?"🎉 Up big! Like Pokémon at peak hype — consider taking some profit!":pp>=0?"📈 Doing well — keep holding!":"📉 Down a bit — don't panic! Good companies always bounce back.";
+                  return(
+                    <div key={h.ticker} style={{borderRadius:14,padding:16,marginBottom:12,background:`linear-gradient(135deg,${h.color}bb,${h.color}44)`,border:`1px solid ${h.color}44`}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><span style={{fontSize:32}}>{h.icon}</span><div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{h.name}</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700}}>{h.type==="stock"?"Building Block":"Collector Card"}</div></div><div style={{textAlign:"right"}}><div style={{fontFamily:"var(--fd)",fontSize:18,color:pnl>=0?"#86efac":"#fca5a5"}}>{pnl>=0?"+":""}{f$(pnl)}</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700}}>{pp>=0?"+":""}{pp}%</div></div></div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>{[["Qty",h.type==="crypto"?h.qty.toFixed(3):h.qty],["Bought at",fs$(h.avgCost)],["Now worth",fs$(cur)]].map(([k,v])=><div key={k}><div style={{fontSize:9,color:"rgba(255,255,255,.4)",fontWeight:800,textTransform:"uppercase"}}>{k}</div><div style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,.9)",marginTop:2}}>{v}</div></div>)}</div>
+                      <div style={{fontSize:11,fontWeight:700,background:"rgba(255,255,255,.1)",borderRadius:9,padding:"8px 10px",color:"rgba(255,255,255,.8)",marginBottom:10,lineHeight:1.4}}>{advice}</div>
+                      <div style={{display:"flex",gap:8}}><button onClick={()=>a&&openTrade(a,"buy")} style={{flex:1,padding:"9px",borderRadius:9,border:"none",background:"rgba(16,185,129,.3)",color:"#86efac",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>+ Buy more</button><button onClick={()=>a&&openTrade(a,"sell")} style={{flex:1,padding:"9px",borderRadius:9,border:"none",background:"rgba(239,68,68,.3)",color:"#fca5a5",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>− Sell</button></div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* MORE views */}
+        {nav==="More"&&(
+          <div>
+            <button onClick={()=>setNav("Home")} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.12)",borderRadius:100,padding:"7px 14px",color:"rgba(255,255,255,.65)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer",marginBottom:14}}>
+              ← Back to Home
+            </button>
+
+            {/* COIN SHOP */}
+            {moreView==="Shop"&&(
+              <div>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>🛍️ Coin Shop</div>
+                {/* Crystal-clear explainer */}
+                <div style={{background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.3)",borderRadius:13,padding:13,marginBottom:14,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.8)",lineHeight:1.6}}>
+                  🪙 <strong style={{color:"#f59e0b"}}>Coins are for FUN stuff only!</strong> Buy themes, avatars and pet outfits here. Coins are totally separate from your Money Garden — you can NEVER buy investments with coins. That keeps your investing real!
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"rgba(255,255,255,.06)",borderRadius:12,padding:"12px 16px",marginBottom:14}}>
+                  <span style={{fontSize:13,fontWeight:800,color:"rgba(255,255,255,.6)"}}>Your coins to spend:</span>
+                  <span style={{fontFamily:"var(--fd)",fontSize:22,color:"#f59e0b"}}>🪙 {coins}</span>
+                </div>
+                {shopMsg&&<div style={{background:"rgba(124,58,237,.15)",border:"1px solid rgba(124,58,237,.3)",borderRadius:11,padding:"10px 13px",marginBottom:12,fontSize:13,fontWeight:800,color:"#fff",textAlign:"center"}}>{shopMsg}</div>}
+                {SHOP_ITEMS.map(item=>{
+                  const isOwned=owned.includes(item.id);
+                  const canAfford=coins>=item.cost;
+                  const isEquippable = item.type==="avatar"||item.type==="theme";
+                  const themeIdMap={theme_neon:"neon",theme_ocean:"ocean"};
+                  const isActive = (item.type==="avatar"&&equipAvatar===item.icon) || (item.type==="theme"&&equipTheme===themeIdMap[item.id]);
+                  return(
+                    <div key={item.id} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",background:"rgba(255,255,255,.06)",border:`1px solid ${isActive?"rgba(16,185,129,.4)":"rgba(255,255,255,.1)"}`,borderRadius:14,marginBottom:9,opacity:isOwned&&!isEquippable?.7:1}}>
+                      <span style={{fontSize:30,flexShrink:0}}>{item.icon}</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{item.name}</div>
+                        <div style={{fontSize:11,color:"rgba(255,255,255,.5)",fontWeight:600,lineHeight:1.4}}>{item.desc}</div>
+                      </div>
+                      {isActive
+                        ?<span style={{fontSize:11,fontWeight:800,color:"#86efac",background:"rgba(16,185,129,.15)",padding:"6px 12px",borderRadius:100,flexShrink:0}}>✅ {item.type==="avatar"?"Wearing":"Active"}</span>
+                        :isOwned&&isEquippable
+                          ?<button onClick={()=>equipItem(item)} style={{flexShrink:0,padding:"9px 14px",borderRadius:11,border:"1.5px solid rgba(16,185,129,.5)",background:"rgba(16,185,129,.12)",color:"#86efac",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>Use it ✨</button>
+                          :isOwned&&!item.consumable
+                            ?<span style={{fontSize:11,fontWeight:800,color:"#86efac",background:"rgba(16,185,129,.15)",padding:"6px 12px",borderRadius:100,flexShrink:0}}>✅ Owned</span>
+                            :<button onClick={()=>buyItem(item)} disabled={!canAfford} style={{flexShrink:0,padding:"9px 14px",borderRadius:11,border:"none",background:canAfford?"linear-gradient(135deg,#f59e0b,#d97706)":"rgba(255,255,255,.08)",color:canAfford?"#fff":"rgba(255,255,255,.3)",fontFamily:"var(--fd)",fontSize:13,cursor:canAfford?"pointer":"not-allowed"}}>🪙 {item.cost}</button>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* BADGES */}
+            {moreView==="Badges"&&(
+              <div>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>🏅 Achievement Badges</div>
+                <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.5)",marginBottom:14}}>Earn badges by hitting milestones. Collect them all to become a Master Investor!</div>
+                <div style={{display:"flex",gap:8,marginBottom:14}}>
+                  <div style={{flex:1,background:"rgba(124,58,237,.12)",borderRadius:12,padding:"12px",textAlign:"center"}}>
+                    <div style={{fontFamily:"var(--fd)",fontSize:22,color:theme.accent}}>{earnedBadges.length}/{BADGES.length}</div>
+                    <div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.4)"}}>BADGES EARNED</div>
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  {BADGES.map(b=>{
+                    const earned=earnedBadges.includes(b.id);
+                    return(
+                      <div key={b.id} style={{background:earned?"rgba(245,158,11,.12)":"rgba(255,255,255,.04)",border:`1.5px solid ${earned?"rgba(245,158,11,.35)":"rgba(255,255,255,.08)"}`,borderRadius:14,padding:14,textAlign:"center",opacity:earned?1:.55}}>
+                        <div style={{fontSize:34,marginBottom:6,filter:earned?"none":"grayscale(1)"}}>{earned?b.icon:"🔒"}</div>
+                        <div style={{fontFamily:"var(--fd)",fontSize:13,color:earned?"#fff":"rgba(255,255,255,.5)",marginBottom:3}}>{b.name}</div>
+                        <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,.45)",lineHeight:1.4}}>{b.desc}</div>
+                        {earned&&<div style={{fontSize:10,fontWeight:800,color:"#f59e0b",marginTop:6}}>✅ Earned!</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* BACKUP / RESTORE */}
+            {moreView==="Backup"&&(
+              <div>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>💾 Back Up My Account</div>
+                <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.5)",marginBottom:14}}>Save a backup code so your progress is never lost — even if the tablet's browser gets cleared.</div>
+
+                <div style={{background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.3)",borderRadius:13,padding:13,marginBottom:14,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.8)",lineHeight:1.6}}>
+                  ⚠️ <strong style={{color:"#f59e0b"}}>Why back up?</strong> Your progress saves on this tablet's browser. If it gets cleared (or on iPad, if you don't open the app for a week), it can disappear. A backup code brings everything back.
+                </div>
+
+                <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,padding:16,marginBottom:12}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff",marginBottom:8}}>Step 1: Make your code</div>
+                  <button onClick={generateBackup} style={{width:"100%",padding:"13px",borderRadius:13,border:"none",background:`linear-gradient(135deg,${theme.accent},${theme.accent}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer"}}>💾 Create backup code</button>
+                  {backupCode&&(
+                    <div style={{marginTop:12}}>
+                      <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.5)",marginBottom:6}}>Step 2: Copy &amp; keep this safe (text it to your parent!)</div>
+                      <div style={{background:"rgba(0,0,0,.3)",border:"1px solid rgba(255,255,255,.12)",borderRadius:10,padding:10,fontSize:10,fontFamily:"monospace",color:"rgba(255,255,255,.7)",wordBreak:"break-all",maxHeight:80,overflowY:"auto",lineHeight:1.5}}>{backupCode}</div>
+                      <button onClick={copyBackup} style={{width:"100%",marginTop:8,padding:"11px",borderRadius:12,border:"none",background:copied?"rgba(16,185,129,.3)":"rgba(255,255,255,.12)",color:copied?"#86efac":"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>{copied?"✅ Copied!":"📋 Copy code"}</button>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{background:"rgba(6,182,212,.08)",border:"1px solid rgba(6,182,212,.2)",borderRadius:12,padding:13,fontSize:12,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.6}}>
+                  🔑 <strong style={{color:"#67e8f9"}}>To restore later:</strong> On the login screen, tap "Restore from a backup code" and paste your code. Your whole account and progress come right back!
+                </div>
+              </div>
+            )}
+
+            {/* PENDING ORDERS */}
+            {moreView==="Orders"&&(
+              <div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>⏳ My Orders</div>
+                  <button onClick={()=>setShowOrderHelp(true)} style={{background:"rgba(124,58,237,.18)",border:"1px solid rgba(124,58,237,.35)",borderRadius:100,padding:"5px 12px",color:"#c4b5fd",fontSize:11,fontWeight:800,cursor:"pointer"}}>❓ How orders work</button>
+                </div>
+                <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.5)",marginBottom:14}}>Orders waiting to happen. Limit orders fill when your target price is hit — even while you're at school!</div>
+
+                {/* Market status banner */}
+                <div style={{display:"flex",alignItems:"center",gap:10,background:mkt.open?"rgba(16,185,129,.1)":"rgba(245,158,11,.1)",border:`1px solid ${mkt.open?"rgba(16,185,129,.25)":"rgba(245,158,11,.3)"}`,borderRadius:13,padding:13,marginBottom:10}}>
+                  <span style={{fontSize:22}}>{mkt.open?"🟢":"🔴"}</span>
+                  <div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>US Stock Market: {mkt.open?"OPEN":"CLOSED"}</div>
+                    <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.55)"}}>{mkt.open?"Trades fill instantly right now":`Opens ${mkt.nextOpenText} · Crypto still trades 24/7`}</div>
+                  </div>
+                </div>
+                {pendingOrders.length>0&&(
+                  <div style={{background:"rgba(6,182,212,.08)",border:"1px solid rgba(6,182,212,.2)",borderRadius:11,padding:"9px 12px",marginBottom:14,fontSize:11,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.5}}>
+                    💡 Tip: open the app after the market opens to let your orders fill. They fill automatically while the app is open — so check back in once the market's awake!
+                  </div>
+                )}
+
+                {pendingOrders.length===0?(
+                  <div>
+                    <div style={{textAlign:"center",padding:"24px 20px 18px",background:"rgba(255,255,255,.04)",borderRadius:14,marginBottom:12}}>
+                      <div style={{fontSize:44,marginBottom:10}}>⏳</div>
+                      <div style={{fontSize:14,fontWeight:700,color:"rgba(255,255,255,.6)",marginBottom:6}}>No waiting orders yet</div>
+                      <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.45)",lineHeight:1.5}}>Here's what one looks like 👇 Place your own from the Trade screen by choosing "🎯 Limit".</div>
+                    </div>
+                    {/* Sample/example order (greyed) */}
+                    <div style={{opacity:.55,position:"relative"}}>
+                      <div style={{position:"absolute",top:8,right:10,fontSize:9,fontWeight:800,background:"rgba(124,58,237,.3)",color:"#c4b5fd",padding:"2px 8px",borderRadius:100,zIndex:1}}>EXAMPLE</div>
+                      <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(16,185,129,.25)",borderRadius:14,padding:14}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                          <span style={{fontSize:26}}>🍎</span>
+                          <div style={{flex:1}}>
+                            <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>🟢 Buy Apple</div>
+                            <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.45)"}}>🎯 Limit order · 1 share · placed today</div>
+                          </div>
+                        </div>
+                        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.65)",background:"rgba(255,255,255,.05)",borderRadius:9,padding:"8px 10px"}}>Target: <strong style={{color:"#fff"}}>$180.00</strong> · Now: $195.00 ⏳ waiting</div>
+                      </div>
+                    </div>
+                    <button onClick={()=>setNav("Trade")} style={{width:"100%",marginTop:14,padding:"13px",borderRadius:13,border:"none",background:`linear-gradient(135deg,${theme.accent},${theme.accent}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>⚡ Go place a real order</button>
+                  </div>
+                ):(
+                  pendingOrders.map(o=>(
+                    <div key={o.id} style={{background:"rgba(255,255,255,.06)",border:`1px solid ${o.side==="buy"?"rgba(16,185,129,.25)":"rgba(239,68,68,.25)"}`,borderRadius:14,padding:14,marginBottom:10}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                        <span style={{fontSize:26}}>{o.icon}</span>
+                        <div style={{flex:1}}>
+                          <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{o.side==="buy"?"🟢 Buy":"🔴 Sell"} {o.name}</div>
+                          <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.45)"}}>{o.kind==="limit"?"🎯 Limit order":"⏰ Queued for open"} · {o.qty<1?o.qty.toFixed(3):o.qty} {o.type==="crypto"?"tokens":"shares"} · placed {o.placed}</div>
+                        </div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{flex:1,fontSize:11,fontWeight:700,color:"rgba(255,255,255,.65)",background:"rgba(255,255,255,.05)",borderRadius:9,padding:"8px 10px"}}>
+                          {o.kind==="limit"
+                            ?<>Target: <strong style={{color:"#fff"}}>{fs$(o.limitPrice)}</strong> · Now: {fs$(prices[o.ticker]||0)} {(o.side==="buy"?(prices[o.ticker]<=o.limitPrice):(prices[o.ticker]>=o.limitPrice))?"✅ ready!":"⏳ waiting"}</>
+                            :<>Fills at next market open ({mkt.nextOpenText})</>}
+                        </div>
+                        <button onClick={()=>cancelOrder(o.id)} style={{padding:"8px 14px",borderRadius:10,border:"1px solid rgba(239,68,68,.3)",background:"rgba(239,68,68,.1)",color:"#fca5a5",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer",flexShrink:0}}>Cancel</button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Performance / P&L — tracks profit across sessions */}
+            {moreView==="Performance"&&(
+              <div>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>📈 My Performance</div>
+                <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.5)",marginBottom:14}}>Track every trade and see your real profit or loss — even after closing the app!</div>
+
+                {/* Big P&L summary */}
+                <div style={{background:allTimeGain>=0?"rgba(16,185,129,.1)":"rgba(239,68,68,.1)",border:`2px solid ${allTimeGain>=0?"rgba(16,185,129,.3)":"rgba(239,68,68,.3)"}`,borderRadius:16,padding:18,marginBottom:14,textAlign:"center"}}>
+                  <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:".5px",marginBottom:4}}>Total Garden Value</div>
+                  <div style={{fontFamily:"var(--fd)",fontSize:34,color:"#fff"}}>{f$(totalValue)}</div>
+                  <div style={{fontSize:13,fontWeight:800,color:allTimeGain>=0?"#86efac":"#fca5a5",marginTop:4}}>
+                    {allTimeGain>=0?"📈 UP":"📉 DOWN"} {f$(Math.abs(allTimeGain))} all-time ({allTimeGain>=0?"+":""}{(allTimeGain/1000*100).toFixed(1)}%)
+                  </div>
+                  {sinceLastVisit!=null&&Math.abs(sinceLastVisit)>=0.01&&(
+                    <div style={{marginTop:8,fontSize:11,fontWeight:700,color:"rgba(255,255,255,.6)",background:"rgba(255,255,255,.08)",borderRadius:10,padding:"6px 12px",display:"inline-block"}}>
+                      👋 Since you were last here: {sinceLastVisit>=0?"+":""}{f$(sinceLastVisit)}
+                    </div>
+                  )}
+                </div>
+
+                {/* Realised vs Unrealised */}
+                <div style={{display:"flex",gap:10,marginBottom:14}}>
+                  <div style={{flex:1,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,padding:14}}>
+                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:3}}>💰 Realised P&amp;L</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:20,color:realisedPnl>=0?"#86efac":"#fca5a5"}}>{realisedPnl>=0?"+":""}{f$(realisedPnl)}</div>
+                    <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,.4)",marginTop:2}}>From completed sells</div>
+                  </div>
+                  <div style={{flex:1,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,padding:14}}>
+                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:3}}>📊 Unrealised P&amp;L</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:20,color:unrealisedPnl>=0?"#86efac":"#fca5a5"}}>{unrealisedPnl>=0?"+":""}{f$(unrealisedPnl)}</div>
+                    <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,.4)",marginTop:2}}>On what you still hold</div>
+                  </div>
+                </div>
+
+                <div style={{background:"rgba(6,182,212,.08)",border:"1px solid rgba(6,182,212,.2)",borderRadius:12,padding:12,marginBottom:14,fontSize:11,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.5}}>
+                  💡 <strong style={{color:"#67e8f9"}}>Realised</strong> = profit you've locked in by selling. <strong style={{color:"#67e8f9"}}>Unrealised</strong> = paper profit on stuff you still own — it changes as prices move!
+                </div>
+
+                {/* Trade history log */}
+                <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff",marginBottom:10}}>📋 Trade History ({trades.length})</div>
+                {trades.length===0?(
+                  <div style={{textAlign:"center",padding:"30px 20px",background:"rgba(255,255,255,.04)",borderRadius:14}}>
+                    <div style={{fontSize:40,marginBottom:10}}>📋</div>
+                    <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.5)"}}>No trades yet. Buy something to start your history!</div>
+                  </div>
+                ):(
+                  trades.map(t=>(
+                    <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.09)",borderRadius:13,marginBottom:8}}>
+                      <div style={{width:36,height:36,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0,background:t.side==="BUY"?"rgba(6,182,212,.15)":"rgba(245,158,11,.15)"}}>{t.icon}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:800,fontSize:13,color:"#fff"}}>{t.name}</div>
+                        <div style={{fontSize:10,color:"rgba(255,255,255,.45)",fontWeight:600}}>{t.date} at {t.time} · {t.qty<1?t.qty.toFixed(3):t.qty} @ {fs$(t.price)}</div>
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <div style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:100,marginBottom:3,display:"inline-block",background:t.side==="BUY"?"rgba(6,182,212,.15)":"rgba(245,158,11,.15)",color:t.side==="BUY"?"#67e8f9":"#fde68a"}}>{t.side==="BUY"?"🟢 BUY":"🔴 SELL"}</div>
+                        <div style={{fontWeight:800,fontSize:12,color:"#fff"}}>{f$(t.total)}</div>
+                        {t.side==="SELL"&&t.pnl!=null&&(
+                          <div style={{fontSize:11,fontWeight:800,color:t.pnl>=0?"#86efac":"#fca5a5"}}>{t.pnl>=0?"✅ +":"❌ "}{f$(t.pnl)} ({t.pnlPct>=0?"+":""}{t.pnlPct}%)</div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+            {/* Ranks */}
+            {moreView==="Ranks"&&(
+              <div>
+                <div style={{background:`linear-gradient(135deg,${theme.accent}33,${theme.accent}11)`,border:`1px solid ${theme.accent}44`,borderRadius:14,padding:"14px 16px",marginBottom:14}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:13,color:"rgba(255,255,255,.5)",marginBottom:6}}>YOUR POSITION</div>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <span style={{fontSize:32}}>{avatar}</span>
+                    <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{user?.name} <span style={{fontSize:11,fontWeight:800,background:`${theme.accent}44`,color:theme.accent,padding:"2px 8px",borderRadius:100}}>YOU</span></div><div style={{fontSize:11,color:"rgba(255,255,255,.5)",fontWeight:600}}>Keep trading to climb! 🚀</div></div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff"}}>{fs$(totalValue)}</div>
+                  </div>
+                </div>
+                <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff",marginBottom:10}}>💎 Diamond Hands — May 2026</div>
+                {LB_BASE.map((e,i)=>(
+                  <div key={e.name} style={{display:"flex",alignItems:"center",gap:11,padding:"13px 15px",background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.09)",borderRadius:13,marginBottom:8}}>
+                    <span style={{fontFamily:"var(--fd)",fontSize:18,width:34,textAlign:"center",color:"rgba(255,255,255,.45)",flexShrink:0}}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":`#${i+1}`}</span>
+                    <span style={{fontSize:26,flexShrink:0}}>{e.avatar}</span>
+                    <span style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff",flex:1}}>{e.name}</span>
+                    <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{fs$(e.val)}</div><div style={{fontSize:10,fontWeight:700,color:e.up?"#86efac":"#fca5a5"}}>{e.up?"▲":"▼"} {e.chg}</div></div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Collectible Cards — feature 2 */}
+            {moreView==="Cards"&&(
+              <div>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>🎴 My Investment Cards</div>
+                <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.5)",marginBottom:10}}>You collect a card every time you buy — like trading cards! Rare cards glow. Buy the same thing 3 times = 3 cards to collect.</div>
+                <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.6)",background:"rgba(99,102,241,.1)",border:"1px solid rgba(99,102,241,.25)",borderRadius:11,padding:"9px 12px",marginBottom:14,lineHeight:1.5}}>💡 These are collectibles, not your holdings. To see how many shares you actually own (combined), check <strong style={{color:"#fff"}}>Assets</strong> or <strong style={{color:"#fff"}}>P&amp;L</strong>.</div>
+                {invCards.length===0?(
+                  <div style={{textAlign:"center",padding:"40px 20px"}}>
+                    <div style={{fontSize:48,marginBottom:12}}>🎴</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff",marginBottom:6}}>No cards yet!</div>
+                    <div style={{fontSize:12,color:"rgba(255,255,255,.5)",fontWeight:600}}>Make your first trade to earn your first card!</div>
+                  </div>
+                ):(
+                  <div className="cards-grid">
+                    {invCards.map(c=>{
+                      const cur=prices[c.ticker]||c.buyPrice;
+                      const pnlPct=parseFloat(pct(cur,c.buyPrice));
+                      const isHolo=pnlPct>10;
+                      const tier=pnlPct>15?"🌟 Rare":pnlPct>5?"✨ Uncommon":"⬜ Common";
+                      return(
+                        <div key={c.id} className={`inv-card ${isHolo?"holo":""}`} style={{background:`linear-gradient(135deg,${c.color}bb,${c.color}55)`,border:`1px solid ${c.color}${isHolo?"99":"44"}`}}>
+                          {isHolo&&<div className="card-shine"/>}
+                          <div className="card-tier">{tier}</div>
+                          <span className="card-ic">{c.icon}</span>
+                          <div className="card-nm">{c.name}</div>
+                          <div style={{fontSize:9,color:"rgba(255,255,255,.5)",fontWeight:700,marginBottom:6}}>Bought {c.earnedAt} @ {fs$(c.buyPrice)}</div>
+                          <div className={`card-pnl ${pnlPct>=0?"":"n"}`} style={{color:pnlPct>=0?"#86efac":"#fca5a5"}}>{pnlPct>=0?"+":""}{pnlPct}% {pnlPct>=10?"🔥":""}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Head-to-head challenges — feature 6 */}
+            {moreView==="Challenge"&&(
+              <div>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>⚔️ Head-to-Head Challenges</div>
+                <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.5)",marginBottom:14}}>Challenge a sibling! Who makes more profit this week? Winner gets 100 coins from the loser!</div>
+                {challenge?(
+                  <div className="challenge-card">
+                    <div style={{fontFamily:"var(--fd)",fontSize:13,color:"rgba(255,255,255,.5)",marginBottom:10}}>⚔️ ACTIVE CHALLENGE · Ends {challenge.ends}</div>
+                    <div className="vs-row">
+                      <div className="vs-player">
+                        <div style={{fontSize:36}}>{avatar}</div>
+                        <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff",marginTop:4}}>{user?.name}</div>
+                        <div className="vs-badge" style={{background:`${challenge.myGain>=0?"rgba(16,185,129,.2)":"rgba(239,68,68,.2)"}`,color:challenge.myGain>=0?"#86efac":"#fca5a5"}}>{challenge.myGain>=0?"+":""}{f$(challenge.myGain)}</div>
+                      </div>
+                      <div className="vs-label">VS</div>
+                      <div className="vs-player">
+                        <div style={{fontSize:36}}>{challenge.sib.avatar}</div>
+                        <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff",marginTop:4}}>{challenge.sib.name}</div>
+                        <div className="vs-badge" style={{background:`${challenge.sibGain>=0?"rgba(16,185,129,.2)":"rgba(239,68,68,.2)"}`,color:challenge.sibGain>=0?"#86efac":"#fca5a5"}}>{challenge.sibGain>=0?"+":""}{f$(challenge.sibGain)}</div>
+                      </div>
+                    </div>
+                    <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.5)",marginBottom:5}}>WHO'S WINNING?</div>
+                    <div className="challenge-bar">
+                      <div className="challenge-fill" style={{width:`${Math.min(100,Math.max(10,(challenge.myGain/(Math.abs(challenge.myGain)+Math.abs(challenge.sibGain)||1))*100))}%`,background:`linear-gradient(90deg,${user?.theme?THEMES.find(t=>t.id===user.theme)?.accent:"#7c3aed"},${challenge.sib.color})`,left:0}}/>
+                    </div>
+                    <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.4)",marginTop:6,textAlign:"center"}}>{challenge.myGain>challenge.sibGain?`${user?.name} is leading! Keep going! 🔥`:`${challenge.sib.name} is ahead — time to trade smarter! 💪`}</div>
+                  </div>
+                ):(
+                  <div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:14,color:"rgba(255,255,255,.6)",marginBottom:12}}>Pick a sibling to challenge:</div>
+                    {SIBLINGS.map(s=>(
+                      <div key={s.id} style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:16,marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
+                        <span style={{fontSize:38}}>{s.avatar}</span>
+                        <div style={{flex:1}}>
+                          <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{s.name}</div>
+                          <div style={{fontSize:11,color:"rgba(255,255,255,.45)",fontWeight:600}}>{s.lastActive} · {s.portPnl>=0?"Up":"Down"} {f$(Math.abs(s.portPnl))} this month</div>
+                        </div>
+                        <button onClick={()=>startChallenge(s)} style={{padding:"10px 16px",borderRadius:12,border:"none",background:`linear-gradient(135deg,#7c3aed,#9333ea)`,color:"#fff",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>Challenge! ⚔️</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Predictions — feature 10 */}
+            {moreView==="Predict"&&(
+              <div>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>🔮 Price Predictions</div>
+                <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.5)",marginBottom:14}}>Guess if a stock will be UP or DOWN in 7 days. Correct predictions earn +50 XP and +25 coins! Train your investing brain!</div>
+                <div className="pred-card">
+                  <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff",marginBottom:10}}>Pick an asset to predict:</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+                    {MARKET.slice(0,6).map(a=>{
+                      const pending=predictions.some(p=>p.ticker===a.ticker&&p.status==="open");
+                      return(
+                        <div key={a.ticker} onClick={()=>!pending&&setPredSel(a)} style={{border:`2px solid ${predSel?.ticker===a.ticker?"rgba(255,255,255,.5)":"rgba(255,255,255,.1)"}`,borderRadius:12,padding:"10px 6px",background:predSel?.ticker===a.ticker?"rgba(255,255,255,.12)":"rgba(255,255,255,.04)",cursor:pending?"not-allowed":"pointer",textAlign:"center",opacity:pending?.5:1}}>
+                          <div style={{fontSize:22}}>{a.icon}</div>
+                          <div style={{fontFamily:"var(--fd)",fontSize:11,color:"#fff",marginTop:3}}>{a.name}</div>
+                          {pending&&<div style={{fontSize:9,fontWeight:800,color:"#67e8f9",marginTop:2}}>PENDING</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {predSel&&(
+                    <>
+                      <div style={{fontSize:13,fontWeight:800,color:"rgba(255,255,255,.8)",marginBottom:8}}>Will {predSel.name} go UP or DOWN in 7 days? Current: {fs$(prices[predSel.ticker]||predSel.basePrice)}</div>
+                      <div className="pred-btns">
+                        <button className="pred-btn-up" onClick={()=>makePred(predSel,"UP")}>📈 UP</button>
+                        <button className="pred-btn-dn" onClick={()=>makePred(predSel,"DOWN")}>📉 DOWN</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+                {predictions.length>0&&(
+                  <div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff",marginBottom:10}}>📋 My Predictions</div>
+                    {predictions.map(p=>(
+                      <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:13,marginBottom:8}}>
+                        <span style={{fontSize:24}}>{p.icon}</span>
+                        <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{p.name}</div><div style={{fontSize:11,color:"rgba(255,255,255,.45)",fontWeight:600}}>Predicting {p.dir} · Resolves {p.resolves}</div></div>
+                        <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--fd)",fontSize:13,color:p.dir==="UP"?"#86efac":"#fca5a5"}}>{p.dir==="UP"?"📈 UP":"📉 DOWN"}</div><div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.4)"}}>Open</div></div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Investment Club — feature 11 */}
+            {moreView==="Club"&&(
+              <div>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>🤝 Investment Club</div>
+                <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.5)",marginBottom:14}}>Pool your money with family members to make bigger joint investments! Everyone contributes, everyone shares the profits.</div>
+                <div className="club-pool">
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
+                    <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>Family Pool</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#f59e0b"}}>{f$(clubPool.total)}</div>
+                  </div>
+                  <div style={{height:6,background:"rgba(255,255,255,.08)",borderRadius:100,overflow:"hidden",marginBottom:12}}>
+                    <div style={{height:"100%",width:`${Math.min(100,(clubPool.total/1000)*100)}%`,background:"linear-gradient(90deg,#f59e0b,#ec4899)",borderRadius:100}}/>
+                  </div>
+                  <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.45)",marginBottom:12}}>Goal: $1,000 to buy 1 Nvidia share together!</div>
+                  {clubPool.members.length>0&&clubPool.members.map((m,i)=>(
+                    <div key={i} className="member-row">
+                      <span style={{fontSize:22}}>{m.avatar||"👤"}</span>
+                      <span style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff",flex:1}}>{m.name}</span>
+                      <span style={{fontFamily:"var(--fd)",fontSize:14,color:"#f59e0b"}}>{f$(m.amt)}</span>
+                    </div>
+                  ))}
+                  {clubPool.total<1000&&(
+                    <div style={{marginTop:14}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                        <span style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,.6)"}}>Contribute:</span>
+                        <input type="range" min={10} max={Math.min(200,cash)} step={10} value={clubAmt} onChange={e=>setClubAmt(+e.target.value)} style={{flex:1,height:6,borderRadius:100,accentColor:theme.accent}}/>
+                        <span style={{fontFamily:"var(--fd)",fontSize:15,color:"#f59e0b",minWidth:45}}>{f$(clubAmt)}</span>
+                      </div>
+                      <button onClick={()=>joinClub(clubAmt)} disabled={clubAmt>cash} style={{width:"100%",padding:"13px",borderRadius:13,border:"none",background:"linear-gradient(135deg,#047857,#10b981)",color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer",opacity:clubAmt>cash?.4:1}}>
+                        🤝 Contribute {f$(clubAmt)}
+                      </button>
+                    </div>
+                  )}
+                  {clubPool.total>=1000&&<div style={{textAlign:"center",padding:"14px 0",fontFamily:"var(--fd)",fontSize:16,color:"#f59e0b"}}>🎉 Pool funded! Time to vote on what to buy!</div>}
+                </div>
+              </div>
+            )}
+
+            {/* Report Card — feature 8 */}
+            {moreView==="Report"&&(
+              <div>
+                <div style={{background:"linear-gradient(135deg,rgba(124,58,237,.15),rgba(6,182,212,.08))",border:"1px solid rgba(124,58,237,.3)",borderRadius:"var(--rl)",padding:20,textAlign:"center",marginBottom:16}}>
+                  <div className="report-star">📊</div>
+                  <div style={{fontFamily:"var(--fd)",fontSize:13,color:"rgba(255,255,255,.5)",marginBottom:4}}>YOUR WEEKLY REPORT CARD</div>
+                  <div className="report-grade" style={{color:reportGrade.startsWith("A")?"#86efac":reportGrade==="B"?"#fde68a":reportGrade==="C"?"#fdba74":"#fca5a5"}}>{reportGrade}</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)"}}>
+                    {reportGrade==="A+"?"Outstanding investor! Your Money Garden is thriving! 🌟":reportGrade==="A"?"Great job! Your investments are paying off! 📈":reportGrade==="B"?"Solid work! Keep learning and diversifying! 💪":reportGrade==="C"?"Room to improve — check the Learn tab for tips! 📚":"Rough week, but every investor has them. Study more! 🧘"}
+                  </div>
+                </div>
+                <div style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.1)",borderRadius:16,padding:16}}>
+                  {[
+                    ["Total Chest Value",f$(totalValue)],
+                    ["Cash in Hand",     f$(cash)],
+                    ["Assets Owned",     `${portfolio.length}`],
+                    ["Portfolio Gain",   `${weekStats.gainPct>=0?"+":""}${weekStats.gainPct}%`],
+                    ["Best Asset",       weekStats.best.name||"None yet"],
+                    ["Lessons Done",     `${doneLesson.length} of ${LESSONS.length}`],
+                    ["Cash from Learning",f$(LESSONS.filter(l=>doneLesson.includes(l.id)).reduce((s,l)=>s+l.cashReward,0))],
+                    ["Streak",           `🔥 ${streak} days`],
+                  ].map(([k,v])=>(
+                    <div key={k} className="stat-row"><span>{k}</span><span className="val">{v}</span></div>
+                  ))}
+                </div>
+                <div style={{background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.25)",borderRadius:14,padding:14,marginTop:14}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#f59e0b",marginBottom:6}}>💡 This Week's Tip</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.6}}>
+                    {portfolio.length<3?"You need more diversification! Own 3-5 different assets — like candy in multiple pockets!":doneLesson.length<3?"Complete more lessons! Each one gives you paper money AND makes you a smarter trader.":"Great diversification! Now focus on timing — check the daily news before each trade."}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>{/* end main */}
+
+      {/* Bottom nav */}
+      <nav className="bnav">
+        {[["🏠","Home"],["⚡","Trade"],["📚","Learn"],["💼","Assets"],["•••","More"]].map(([ic,lb])=>(
+          <button key={lb} className={`bnav-btn ${(lb==="More"?nav==="More":nav===lb)?"on":""}`} onClick={()=>{if(lb==="More"){setMoreOpen(true);}else{setNav(lb);}}}>
+            <span className="bni">{ic}</span>{lb}
+          </button>
+        ))}
+      </nav>
+
+      {/* More drawer */}
+      {moreOpen&&(
+        <div className="drawer-ov" onClick={()=>setMoreOpen(false)}>
+          <div className="drawer" onClick={e=>e.stopPropagation()}>
+            <div style={{width:36,height:4,borderRadius:100,background:"rgba(255,255,255,.15)",margin:"0 auto 16px"}}/>
+            <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>More Features</div>
+            <div className="drawer-grid">
+              {MORE_ITEMS.map(m=>(
+                <button key={m.id} className={`drawer-btn ${moreView===m.id&&nav==="More"?"on":""}`} onClick={()=>{setMoreView(m.id);setNav("More");setMoreOpen(false);}}>
+                  <span className="di">{m.icon}</span>{m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tour overlay */}
+      {!tourDone&&tourStep<=4&&tourS&&(
+        <div className="tour-ov">
+          <div className="tour-bg"/>
+          {tourStep===4&&<div style={{position:"absolute",bottom:64,left:0,right:0,textAlign:"center",zIndex:1}}><div style={{display:"inline-block",background:"rgba(255,255,255,.15)",border:"2px solid #fff",borderRadius:14,padding:"6px 20px",fontSize:11,fontWeight:800,color:"#fff"}}>👆 Your toolbar is right here</div></div>}
+          <div className="tour-card">
+            <div style={{display:"flex",gap:6,justifyContent:"center",marginBottom:16}}>{[1,2,3,4].map(i=><div key={i} style={{height:6,borderRadius:100,background:i<=tourStep?"#fff":"rgba(255,255,255,.2)",width:i===tourStep?22:6,transition:"all .3s"}}/>)}</div>
+            <div style={{fontSize:48,textAlign:"center",marginBottom:12,animation:"popUp .4s ease"}}>{tourS.icon}</div>
+            <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",textAlign:"center",marginBottom:10,lineHeight:1.25}}>{tourS.title}</div>
+            <div style={{fontSize:13,color:"rgba(255,255,255,.7)",fontWeight:600,lineHeight:1.75,textAlign:"center",marginBottom:20}}>{tourS.body}</div>
+            <button onClick={()=>{if(tourS.goTo)setNav(tourS.goTo);if(tourStep<4)setTourStep(s=>s+1);else setTourDone(true);}} style={{width:"100%",padding:16,borderRadius:15,border:"none",background:`linear-gradient(135deg,${theme.accent},${theme.accent}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:17,cursor:"pointer",boxShadow:`0 6px 22px ${theme.accent}55`}}>{tourS.cta}</button>
+            {tourStep>1&&<button onClick={()=>setTourStep(s=>s-1)} style={{display:"block",margin:"10px auto 0",background:"none",border:"none",color:"rgba(255,255,255,.35)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"var(--fb)"}}>← Back</button>}
+          </div>
+        </div>
+      )}
+
+      {/* Trade modal */}
+      {tradeAsset&&(
+        <div className="trade-ov" onClick={()=>setTradeAsset(null)}>
+          <div className="trade-modal" onClick={e=>e.stopPropagation()}>
+            <div className="handle"/>
+            <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"rgba(255,255,255,.06)",borderRadius:13,marginBottom:12}}>
+              <span style={{fontSize:38}}>{tradeAsset.icon}</span>
+              <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff"}}>{tradeAsset.name}</div><div style={{fontSize:12,color:"rgba(255,255,255,.5)",fontWeight:700}}>{fs$(prices[tradeAsset.ticker]||tradeAsset.basePrice)} · {tradeAsset.risk==="low"?"🟢 Lower Risk":tradeAsset.risk==="medium"?"🟠 Medium Risk":"🔴 High Risk"}</div></div>
+            </div>
+            <div style={{background:"rgba(124,58,237,.12)",border:"1px solid rgba(124,58,237,.2)",borderRadius:12,padding:12,marginBottom:11,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.85)",lineHeight:1.55}}>🧒 {tradeAsset.kidEx}</div>
+            <div style={{borderRadius:12,padding:"10px 13px",marginBottom:12,fontSize:12,fontWeight:700,lineHeight:1.5,background:tradeAsset.newsGood?"rgba(4,120,87,.08)":"rgba(239,68,68,.07)",border:`1px solid ${tradeAsset.newsGood?"rgba(4,120,87,.25)":"rgba(239,68,68,.25)"}`,color:tradeAsset.newsGood?"#86efac":"#fca5a5"}}>{tradeAsset.news}</div>
+            <div style={{display:"flex",gap:8,marginBottom:12}}>
+              <button onClick={()=>setTradeMode("buy")} style={{flex:1,padding:"10px",borderRadius:11,border:`1.5px solid ${tradeMode==="buy"?"rgba(16,185,129,.6)":"rgba(255,255,255,.15)"}`,background:tradeMode==="buy"?"rgba(16,185,129,.2)":"transparent",color:tradeMode==="buy"?"#86efac":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>🟢 Buy</button>
+              <button onClick={()=>setTradeMode("sell")} style={{flex:1,padding:"10px",borderRadius:11,border:`1.5px solid ${tradeMode==="sell"?"rgba(239,68,68,.6)":"rgba(255,255,255,.15)"}`,background:tradeMode==="sell"?"rgba(239,68,68,.2)":"transparent",color:tradeMode==="sell"?"#fca5a5":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>🔴 Sell {(()=>{const h=portfolio.find(p=>p.ticker===tradeAsset.ticker);return h?`(${tradeAsset.type==="crypto"?h.qty.toFixed(2):h.qty})`:""})()}</button>
+            </div>
+
+            {/* Market status + order type */}
+            {(()=>{
+              const isCrypto=tradeAsset.type==="crypto";
+              return(
+                <div style={{marginBottom:12}}>
+                  {/* Status line */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,background:isCrypto||mkt.open?"rgba(16,185,129,.1)":"rgba(245,158,11,.1)",border:`1px solid ${isCrypto||mkt.open?"rgba(16,185,129,.25)":"rgba(245,158,11,.3)"}`,borderRadius:11,padding:"9px 12px",marginBottom:10}}>
+                    <span style={{fontSize:14}}>{isCrypto?"🌐":mkt.open?"🟢":"🔴"}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.8)",lineHeight:1.4}}>
+                      {isCrypto
+                        ?"Crypto trades 24/7 — buy or sell anytime, instantly!"
+                        :mkt.open
+                          ?"US market is OPEN — your order fills right away."
+                          :`US market is CLOSED. A market order will queue for ${mkt.nextOpenText}.`}
+                    </span>
+                  </div>
+                  {/* Order type toggle */}
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={()=>setOrderType("market")} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${orderType==="market"?"rgba(124,58,237,.6)":"rgba(255,255,255,.12)"}`,background:orderType==="market"?"rgba(124,58,237,.18)":"transparent",color:orderType==="market"?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>⚡ Market<div style={{fontSize:9,fontWeight:600,opacity:.7,fontFamily:"var(--fb)"}}>Buy now at any price</div></button>
+                    <button onClick={()=>{setOrderType("limit");if(!seenOrderHelp){setShowOrderHelp(true);setSeenOrderHelp(true);}}} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${orderType==="limit"?"rgba(124,58,237,.6)":"rgba(255,255,255,.12)"}`,background:orderType==="limit"?"rgba(124,58,237,.18)":"transparent",color:orderType==="limit"?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>🎯 Limit<div style={{fontSize:9,fontWeight:600,opacity:.7,fontFamily:"var(--fb)"}}>Set your target price</div></button>
+                  </div>
+                  {/* Limit price input */}
+                  {orderType==="limit"&&(()=>{
+                    const nowP = prices[tradeAsset.ticker]||tradeAsset.basePrice;
+                    const exTarget = tradeMode==="buy" ? +(nowP*0.92).toFixed(isCrypto?0:2) : +(nowP*1.15).toFixed(isCrypto?0:2);
+                    return(
+                    <div style={{marginTop:10,background:"rgba(124,58,237,.08)",border:"1px solid rgba(124,58,237,.2)",borderRadius:11,padding:12}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.5,flex:1}}>
+                          {tradeMode==="buy"
+                            ?`🎯 Buy ONLY when the price drops to your target. Great for "buy on sale"!`
+                            :`🎯 Sell ONLY when the price rises to your target. Great for "take profit"!`}
+                        </div>
+                        <button onClick={()=>setShowOrderHelp(true)} style={{flexShrink:0,marginLeft:8,background:"rgba(255,255,255,.12)",border:"none",borderRadius:8,padding:"4px 9px",color:"rgba(255,255,255,.7)",fontSize:10,fontWeight:800,cursor:"pointer"}}>❓ How?</button>
+                      </div>
+                      {/* Worked example with THIS asset's real numbers */}
+                      <div style={{background:"rgba(0,0,0,.2)",borderRadius:9,padding:"9px 11px",marginBottom:9,fontSize:11,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.6}}>
+                        💡 <strong style={{color:"#c4b5fd"}}>Example:</strong> {tradeAsset.name} is {fs$(nowP)} right now.
+                        {tradeMode==="buy"
+                          ?<> Set your target to <strong style={{color:"#fff"}}>{fs$(exTarget)}</strong>. If it drops that low while you're at school, we buy it for you automatically — like leaving a note: "grab it when it's on sale!"</>
+                          :<> Set your target to <strong style={{color:"#fff"}}>{fs$(exTarget)}</strong>. If it climbs that high, we sell automatically and lock in your profit — even if you're asleep!</>}
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:13,fontWeight:800,color:"rgba(255,255,255,.6)"}}>Target $</span>
+                        <input type="number" value={limitPrice} onChange={e=>setLimitPrice(+e.target.value)} step={isCrypto?100:1} style={{flex:1,padding:"10px 12px",borderRadius:10,border:"1.5px solid rgba(255,255,255,.2)",background:"rgba(255,255,255,.08)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,outline:"none"}}/>
+                        <button onClick={()=>setLimitPrice(exTarget)} style={{flexShrink:0,padding:"8px 10px",borderRadius:9,border:"1px solid rgba(124,58,237,.4)",background:"rgba(124,58,237,.2)",color:"#c4b5fd",fontSize:10,fontWeight:800,cursor:"pointer"}}>Use {fs$(exTarget)}</button>
+                      </div>
+                      <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,.4)",marginTop:6}}>Now: {fs$(nowP)} · Your order waits until the target is hit (even while you're at school!).</div>
+                    </div>
+                    );
+                  })()}
+                </div>
+              );
+            })()}
+            <div className="qty-row">
+              <button className="qty-btn" onClick={()=>setTradeQty(q=>Math.max(tradeAsset.type==="crypto"?.01:1,tradeAsset.type==="crypto"?+(q-.1).toFixed(2):q-1))}>−</button>
+              <div style={{flex:1,textAlign:"center"}}><div style={{fontFamily:"var(--fd)",fontSize:32,color:"#fff"}}>{tradeAsset.type==="crypto"?tradeQty.toFixed(2):tradeQty}</div><div style={{fontSize:10,color:"rgba(255,255,255,.4)",fontWeight:700,marginTop:-4}}>{tradeAsset.type==="crypto"?"tokens":"shares"} · {fs$((prices[tradeAsset.ticker]||tradeAsset.basePrice)*tradeQty)}</div></div>
+              <button className="qty-btn" onClick={()=>setTradeQty(q=>tradeAsset.type==="crypto"?+(q+.1).toFixed(2):q+1)}>+</button>
+            </div>
+            {tradeMode==="buy"&&(()=>{const total=(prices[tradeAsset.ticker]||tradeAsset.basePrice)*tradeQty;return(
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:".4px",marginBottom:6}}>🎲 What could happen to your {fs$(total)}?</div>
+                {[[`📈 UP 20%`,`+${fs$(total*.2)}`,`≈ ${toRobux(total*.2)} Robux!`,"rgba(16,185,129,.08)","rgba(16,185,129,.22)","#86efac"],[`➡️ Flat`,`$0`,`No change`,"rgba(100,116,139,.07)","rgba(100,116,139,.15)","rgba(255,255,255,.4)"],[`📉 DOWN 10%`,`-${fs$(total*.1)}`,`Like losing ${toRobux(total*.1)} Robux`,"rgba(239,68,68,.07)","rgba(239,68,68,.22)","#fca5a5"]].map(([l,a,s,bg,bdr,col])=>(
+                  <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"9px 12px",background:bg,border:`1px solid ${bdr}`,borderRadius:10,marginBottom:3}}>
+                    <div><div style={{fontSize:12,fontWeight:800,color:col}}>{l}</div><div style={{fontSize:9,color:"rgba(255,255,255,.35)",fontWeight:600}}>{s}</div></div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:14,color:col}}>{a}</div>
+                  </div>
+                ))}
+              </div>
+            );})()}
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={execTrade} disabled={(tradeMode==="buy"&&tokens===0)||(tradeMode==="buy"&&(orderType==="limit"?limitPrice:prices[tradeAsset.ticker]||tradeAsset.basePrice)*tradeQty>cash)} style={{flex:2,padding:"14px",borderRadius:14,border:"none",background:tradeMode==="buy"?"linear-gradient(135deg,#10b981,#059669)":"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer",opacity:(tradeMode==="buy"&&tokens===0)?.4:1}}>
+                {(()=>{
+                  const isCrypto=tradeAsset.type==="crypto";
+                  if(orderType==="limit") return tradeMode==="buy"?"🎯 Place Buy Limit":"🎯 Place Sell Limit";
+                  if(!isCrypto&&!mkt.open) return "⏰ Queue for open";
+                  return tradeMode==="buy"?"🟢 Confirm Buy":"🔴 Confirm Sell";
+                })()}
+              </button>
+              <button onClick={()=>setTradeAsset(null)} style={{flex:1,padding:"14px",borderRadius:14,border:"1.5px solid rgba(255,255,255,.15)",background:"transparent",color:"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>Cancel</button>
+            </div>
+            {tradeMode==="buy"&&tokens===0&&<div style={{textAlign:"center",marginTop:8,fontSize:11,fontWeight:700,color:"#fca5a5",lineHeight:1.5}}>⚠️ You've used all {DAILY_TOKENS} of today's BUY trades! (Selling is always free.) You have {fs$(cash)} ready — {DAILY_TOKENS} fresh buys arrive tomorrow, or grab an Extra Trade Token in the Coin Shop 🪙</div>}
+            {tradeMode==="sell"&&<div style={{textAlign:"center",marginTop:8,fontSize:11,fontWeight:700,color:"#86efac",lineHeight:1.5}}>✅ Selling is always free — no trade token needed!</div>}
+            {tradeMode==="buy"&&tokens>0&&(orderType==="limit"?limitPrice:prices[tradeAsset.ticker]||tradeAsset.basePrice)*tradeQty>cash&&<div style={{textAlign:"center",marginTop:8,fontSize:11,fontWeight:700,color:"#fca5a5"}}>⚠️ Not enough cash for this many — reduce the quantity!</div>}
+          </div>
+        </div>
+      )}
+
+      {/* Limit-order explainer (replayable) */}
+      {showOrderHelp&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:310,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowOrderHelp(false)}>
+          <div style={{background:"#111827",border:"1px solid rgba(124,58,237,.3)",borderRadius:22,padding:24,maxWidth:400,width:"100%",maxHeight:"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:44,textAlign:"center",marginBottom:8}}>🎯</div>
+            <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",textAlign:"center",marginBottom:6}}>What's a Limit Order?</div>
+            <div style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,.65)",textAlign:"center",lineHeight:1.6,marginBottom:16}}>It's how you trade even when you're at school! 🎒</div>
+            {[
+              {ic:"🎒",t:"The problem",d:"The US stock market is only open while you're in class (about 2:30pm–9pm UK time). You can't watch prices all day!"},
+              {ic:"📝",t:"The clever trick",d:"A limit order is like leaving a note with a friend: 'If my favourite trainers drop to £40, buy them for me!' You set your price and walk away."},
+              {ic:"🟢",t:"Buy limit = wait for a sale",d:"Apple is $195? Set a buy limit at $180. If it ever dips to $180 — even at 3am — the app buys it for you automatically. You never overpay!"},
+              {ic:"🔴",t:"Sell limit = lock in profit",d:"Own Roblox at $50 and want to take profit at $60? Set a sell limit at $60. The moment it hits, the app sells and banks your gain — even while you sleep."},
+              {ic:"⏳",t:"Check your orders anytime",d:"All your waiting orders live in ••• → Orders. You can see which are ready, and cancel any you change your mind about."},
+            ].map(x=>(
+              <div key={x.t} style={{background:"rgba(255,255,255,.05)",borderRadius:13,padding:13,marginBottom:9,display:"flex",gap:11}}>
+                <span style={{fontSize:26,flexShrink:0}}>{x.ic}</span>
+                <div><div style={{fontFamily:"var(--fd)",fontSize:14,color:"#c4b5fd",marginBottom:3}}>{x.t}</div><div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.65)",lineHeight:1.55}}>{x.d}</div></div>
+              </div>
+            ))}
+            <div style={{background:"rgba(124,58,237,.12)",borderRadius:12,padding:12,marginBottom:14,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.8)",textAlign:"center",lineHeight:1.5}}>
+              🧠 Remember: <strong style={{color:"#86efac"}}>Buy low</strong> (set target below now) · <strong style={{color:"#fca5a5"}}>Sell high</strong> (set target above now)
+            </div>
+            <button onClick={()=>setShowOrderHelp(false)} style={{width:"100%",padding:14,borderRadius:14,border:"none",background:`linear-gradient(135deg,${theme.accent},${theme.accent}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer"}}>Got it — let's try! 🎯</button>
+          </div>
+        </div>
+      )}
+
+      {/* XP / Coin / Money explainer */}
+      {showInfo&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowInfo(false)}>
+          <div style={{background:"#111827",border:"1px solid rgba(124,58,237,.3)",borderRadius:22,padding:24,maxWidth:400,width:"100%"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",textAlign:"center",marginBottom:16}}>3 things you collect 🎮</div>
+            {[
+              {ic:"💵",col:"#86efac",name:"Money Garden",desc:"Your REAL investing money. You buy stocks with this and try to grow it. This is what the whole game is about — making it bigger!"},
+              {ic:"⚡",col:"#67e8f9",name:"XP (Experience)",desc:"Shows how much you've LEARNED. Earn it by trading, learning and completing missions. More XP = higher Level = more experienced investor. You can't spend XP — it's your skill score!"},
+              {ic:"🪙",col:"#f59e0b",name:"Coins",desc:"Fun reward money! Spend coins in the Shop on themes, avatars and pet outfits. Coins are JUST for fun — you can never buy investments with them."},
+            ].map(x=>(
+              <div key={x.name} style={{background:"rgba(255,255,255,.05)",borderRadius:14,padding:14,marginBottom:10,display:"flex",gap:12}}>
+                <span style={{fontSize:30,flexShrink:0}}>{x.ic}</span>
+                <div>
+                  <div style={{fontFamily:"var(--fd)",fontSize:15,color:x.col,marginBottom:3}}>{x.name}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.65)",lineHeight:1.55}}>{x.desc}</div>
+                </div>
+              </div>
+            ))}
+            <div style={{background:"rgba(124,58,237,.12)",borderRadius:12,padding:12,marginBottom:14,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.8)",textAlign:"center",lineHeight:1.5}}>
+              🧠 Easy way to remember:<br/><strong style={{color:"#86efac"}}>Money</strong> = invest · <strong style={{color:"#67e8f9"}}>XP</strong> = level up · <strong style={{color:"#f59e0b"}}>Coins</strong> = fun shop
+            </div>
+            <button onClick={()=>setShowInfo(false)} style={{width:"100%",padding:14,borderRadius:14,border:"none",background:`linear-gradient(135deg,${theme.accent},${theme.accent}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer"}}>Got it! 👍</button>
+          </div>
+        </div>
+      )}
+
+      {/* New badge earned popup */}
+      {newBadge&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.9)",zIndex:350,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:14,padding:24}}>
+          <div style={{fontSize:80,animation:"popUp .6s cubic-bezier(.34,1.56,.64,1)"}}>{newBadge.icon}</div>
+          <div style={{fontFamily:"var(--fd)",fontSize:13,color:"#f59e0b",letterSpacing:"1px"}}>🏅 NEW BADGE EARNED!</div>
+          <div style={{fontFamily:"var(--fd)",fontSize:24,color:"#fff",textAlign:"center"}}>{newBadge.name}</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.6)",fontWeight:700,textAlign:"center",maxWidth:260}}>{newBadge.desc}</div>
+        </div>
+      )}
+
+      {/* Success */}
+      {success&&(
+        <div className="success-ov">
+          <div style={{fontSize:72,animation:"popUp .6s cubic-bezier(.34,1.56,.64,1)"}}>{success.icon}</div>
+          <div style={{fontFamily:"var(--fd)",fontSize:22,color:"#fff"}}>{success.mode==="buy"?"Added to Chest! 🎉":"Sold! 💸"}</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.55)",fontWeight:700}}>{success.name} · {fs$(success.total)} · +50 XP +10 Coins</div>
+          {success.mode==="buy"&&<div style={{fontSize:12,fontWeight:800,color:"#f59e0b"}}>🎴 New investment card earned!</div>}
+        </div>
+      )}
+
+      {/* Cash reward from lesson */}
+      {cashReward&&(
+        <div className="reward-ov">
+          <div style={{fontSize:70,animation:"popUp .5s cubic-bezier(.34,1.56,.64,1)"}}>💵</div>
+          <div style={{fontFamily:"var(--fd)",fontSize:26,color:"#f59e0b",textShadow:"0 0 20px rgba(245,158,11,.5)"}}>+{fs$(cashReward.amount)} Paper Money!</div>
+          <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff"}}>Lesson Complete! 🎓</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.6)",fontWeight:700,textAlign:"center",lineHeight:1.6,maxWidth:280}}>You learned something real — so you earned real trading capital. Knowledge = money! 🧠</div>
+          <div style={{background:"rgba(245,158,11,.12)",border:"1px solid rgba(245,158,11,.3)",borderRadius:16,padding:"14px 24px",textAlign:"center",marginTop:4,display:"flex",gap:18}}>
+            <div><div style={{fontFamily:"var(--fd)",fontSize:22,color:"#06b6d4"}}>+200</div><div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.4)"}}>XP</div></div>
+            <div style={{width:1,background:"rgba(255,255,255,.1)"}}/>
+            <div><div style={{fontFamily:"var(--fd)",fontSize:22,color:"#f59e0b"}}>+50</div><div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.4)"}}>COINS</div></div>
+          </div>
+          {cashReward.tryIt&&(
+            <div style={{marginTop:18,width:"100%",maxWidth:300}}>
+              <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",textAlign:"center",marginBottom:10}}>Now put it into practice! 👇</div>
+              <button onClick={()=>{
+                setCashReward(null);
+                if(cashReward.tryIt.act==="limit"){ setNav("Trade"); setShowOrderHelp(true); }
+                else { setNav("Trade"); }
+              }} style={{width:"100%",padding:14,borderRadius:14,border:"none",background:`linear-gradient(135deg,${theme.accent},${theme.accent}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer",marginBottom:8}}>{cashReward.tryIt.label} →</button>
+              <button onClick={()=>setCashReward(null)} style={{width:"100%",padding:10,borderRadius:12,border:"none",background:"transparent",color:"rgba(255,255,255,.4)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer"}}>Maybe later</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lesson modal — slides then quiz */}
+      {lesson&&(
+        <div className="lesson-ov">
+          <div className="lesson-modal">
+            {!inQuiz?(<>
+              {/* ── SLIDES ── */}
+              <div className="lesson-prog"><div className="lesson-prog-fill" style={{width:`${(lessonSlide/lesson.slides.length)*100}%`,background:`linear-gradient(90deg,${lesson.color},${lesson.color}88)`}}/></div>
+              <div className="lesson-body">
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                  <span style={{fontFamily:"var(--fd)",fontSize:13,color:lesson.color}}>{lesson.title}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:11,color:"rgba(255,255,255,.35)",fontWeight:700}}>{lessonSlide+1}/{lesson.slides.length}</span>
+                    <button onClick={closeLesson} style={{background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.15)",borderRadius:8,padding:"4px 9px",color:"rgba(255,255,255,.5)",fontSize:11,fontWeight:800,cursor:"pointer"}}>✕ Save</button>
+                  </div>
+                </div>
+                <span className="lesson-ic">{lesson.slides[lessonSlide].icon}</span>
+                <div className="lesson-title">{lesson.slides[lessonSlide].title}</div>
+                <div className="lesson-txt">{lesson.slides[lessonSlide].body}</div>
+                <div className="lesson-ex" style={{background:`${lesson.color}22`,border:`1px solid ${lesson.color}44`,color:lesson.color}}>{lesson.slides[lessonSlide].example}</div>
+                {!slideReady&&(
+                  <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{flex:1,height:4,background:"rgba(255,255,255,.08)",borderRadius:100,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,(slideTimer/3)*100)}%`,background:lesson.color,borderRadius:100,transition:"width 1s linear"}}/></div>
+                    <span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.35)",flexShrink:0}}>{Math.max(0,3-slideTimer)}s</span>
+                  </div>
+                )}
+                {slideReady&&<div style={{marginTop:8,fontSize:10,fontWeight:800,color:lesson.color,textAlign:"center"}}>✅ Read! You can continue.</div>}
+              </div>
+              <div className="lesson-footer">
+                {lessonSlide>0
+                  ?<button className="lesson-back" onClick={()=>{setLessonSlide(s=>s-1);setSlideReady(false);setSlideTimer(0);}}>← Back</button>
+                  :<button className="lesson-back" onClick={closeLesson}>✕ Close</button>}
+                {lessonSlide===lesson.slides.length-1
+                  ?<button className="lesson-next" disabled={!slideReady} style={{background:slideReady?`linear-gradient(135deg,${lesson.color},${lesson.color}88)`:"rgba(255,255,255,.08)",cursor:slideReady?"pointer":"not-allowed"}} onClick={()=>slideReady&&startGame()}>
+                      {slideReady?"🎮 Play the Level!":"⏳ Reading..."}
+                    </button>
+                  :<button className="lesson-next" disabled={!slideReady} style={{background:slideReady?`linear-gradient(135deg,${lesson.color},${lesson.color}88)`:"rgba(255,255,255,.08)",cursor:slideReady?"pointer":"not-allowed"}} onClick={advanceSlide}>
+                      {slideReady?"Next →":`⏳ ${Math.max(0,3-slideTimer)}s`}
+                    </button>}
+              </div>
+            </>):(<>
+              {/* ── ADVENTURE LEVEL ── */}
+              {(()=>{
+                const cp = lesson.quiz[qIdx];
+                const total = lesson.quiz.length;
+                const buddyObj = STARTERS.find(s=>s.id===buddy)||STARTERS[0];
+                return(
+                  <div style={{position:"relative",overflow:"hidden"}} className={shake?"shake":""}>
+                    {/* red flash on wrong */}
+                    {qWrong&&<div style={{position:"absolute",inset:0,background:"#ef4444",animation:"redFlash .5s ease",pointerEvents:"none",zIndex:5,borderRadius:14}}/>}
+                    <div className="lesson-body" style={{paddingTop:16}}>
+                      {/* HUD: hearts + combo + checkpoint */}
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                        <div style={{display:"flex",gap:3}}>{[0,1,2].map(h=><span key={h} style={{fontSize:18,opacity:h<hearts?1:.25,transition:"opacity .3s"}}>{h<hearts?"❤️":"🖤"}</span>)}</div>
+                        {combo>=2&&<div style={{fontFamily:"var(--fd)",fontSize:13,color:"#f59e0b",animation:"popUp .3s ease"}}>🔥 {combo} streak!</div>}
+                        <div style={{fontSize:11,color:"rgba(255,255,255,.45)",fontWeight:800}}>Flag {qIdx+1}/{total}</div>
+                      </div>
+
+                      {/* The adventure path */}
+                      <div style={{position:"relative",background:`linear-gradient(180deg,${lesson.color}18,rgba(0,0,0,.2))`,border:`1px solid ${lesson.color}33`,borderRadius:16,padding:"14px 12px",marginBottom:16,minHeight:96}}>
+                        <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",height:64,position:"relative"}}>
+                          {lesson.quiz.map((_,n)=>{
+                            const done=n<qIdx, current=n===qIdx;
+                            return(
+                              <div key={n} style={{display:"flex",flexDirection:"column",alignItems:"center",flex:1,position:"relative"}}>
+                                {/* buddy sits on current node */}
+                                {current&&(
+                                  <div style={{position:"absolute",bottom:34,left:"50%",transform:"translateX(-50%)",zIndex:3}}>
+                                    <span className={`game-buddy ${buddyAnim}`} style={{fontSize:40,filter:`drop-shadow(0 4px 8px ${buddyObj.glow}88)`}}>{buddyObj.emoji}</span>
+                                    {/* dust puff under buddy on hop */}
+                                    {buddyAnim==="hop"&&<div style={{position:"absolute",bottom:-4,left:"50%",transform:"translateX(-50%)",width:24,height:10,borderRadius:"50%",background:"rgba(255,255,255,.4)",animation:"dustPuff .5s ease forwards"}}/>}
+                                  </div>
+                                )}
+                                {/* checkpoint flag */}
+                                <span style={{fontSize:20,filter:done?"none":current?"none":"grayscale(.7)",opacity:done||current?1:.5}}>{done?"🚩":current?"⛳":"🏳️"}</span>
+                                {/* path dot */}
+                                <div style={{width:"100%",height:3,background:done?lesson.color:"rgba(255,255,255,.12)",marginTop:4}}/>
+                              </div>
+                            );
+                          })}
+                          {/* goal at the end */}
+                          <div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0,paddingLeft:4}}>
+                            <span style={{fontSize:24,filter:levelWon?"none":"grayscale(.4)"}}>{levelWon?"🎉":"🏰"}</span>
+                          </div>
+                        </div>
+                        {/* coin burst */}
+                        {coinBurst&&[0,1,2,3].map(c=><div key={c} style={{position:"absolute",top:30,left:`${30+c*12}%`,fontSize:18,animation:"coinFly .7s ease forwards",["--cx"]:`${(c-1.5)*30}px`}}>🪙</div>)}
+                      </div>
+
+                      {levelWon?(
+                        <div style={{textAlign:"center",padding:"10px 0"}}>
+                          <div style={{fontFamily:"var(--fd)",fontSize:22,color:"#86efac"}}>🎉 Level Complete!</div>
+                          <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.6)",marginTop:6}}>{buddyObj.name} reached the castle! Collecting your reward...</div>
+                        </div>
+                      ):(
+                        <>
+                          <div style={{fontSize:11,fontWeight:800,color:lesson.color,textTransform:"uppercase",letterSpacing:".5px",textAlign:"center",marginBottom:8}}>⛳ Checkpoint {qIdx+1}</div>
+                          <div style={{fontFamily:"var(--fd)",fontSize:17,color:"#fff",textAlign:"center",marginBottom:16,lineHeight:1.4}}>{cp.q}</div>
+                          <div style={{display:"flex",flexDirection:"column",gap:9}}>
+                            {cp.opts.map((opt,i)=>{
+                              const isSel=qAnswer===i, isCorrect=i===cp.correct, showResult=qAnswer!==null;
+                              let bg="rgba(255,255,255,.06)",bd="rgba(255,255,255,.12)",col="#fff";
+                              if(showResult&&isCorrect){bg="rgba(16,185,129,.18)";bd="rgba(16,185,129,.5)";col="#86efac";}
+                              else if(showResult&&isSel&&!isCorrect){bg="rgba(239,68,68,.15)";bd="rgba(239,68,68,.5)";col="#fca5a5";}
+                              return(
+                                <button key={i} disabled={qAnswer!==null} onClick={()=>answerGame(i)} style={{padding:"13px 15px",borderRadius:13,border:`2px solid ${bd}`,background:bg,color:col,fontFamily:"var(--fb)",fontSize:14,fontWeight:800,cursor:qAnswer!==null?"default":"pointer",textAlign:"left",transition:"all .2s",display:"flex",alignItems:"center",gap:10}}>
+                                  <span style={{width:24,height:24,borderRadius:"50%",border:`2px solid ${bd}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,flexShrink:0}}>{showResult&&isCorrect?"✓":showResult&&isSel?"✗":String.fromCharCode(65+i)}</span>
+                                  {opt}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {qWrong&&(
+                            <div style={{marginTop:14,background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:13,padding:13}}>
+                              <div style={{fontFamily:"var(--fd)",fontSize:13,color:"#fca5a5",marginBottom:5}}>{hearts>0?`Ouch! ${buddyObj.name} stumbled — ${hearts} ❤️ left`:`${buddyObj.name} tumbled back to the start! 😵`}</div>
+                              <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.5,marginBottom:10}}>{cp.why}</div>
+                              {hearts>0&&<div style={{display:"flex",gap:8}}>
+                                <button onClick={retryCheckpoint} style={{flex:1,padding:"10px",borderRadius:11,border:"none",background:`linear-gradient(135deg,${lesson.color},${lesson.color}88)`,color:"#fff",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>🔄 Try this flag again</button>
+                                <button onClick={reviewLesson} style={{flex:1,padding:"10px",borderRadius:11,border:"1.5px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.7)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>📖 Review</button>
+                              </div>}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {!levelWon&&(
+                      <div className="lesson-footer">
+                        <button className="lesson-back" onClick={reviewLesson}>📖 Review lesson</button>
+                        <button className="lesson-back" onClick={closeLesson} style={{flex:1}}>✕ Close</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </>)}
+          </div>
+        </div>
+      )}
+
+      {/* Starter buddy picker */}
+      {pickBuddy&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.9)",zIndex:340,display:"flex",alignItems:"center",justifyContent:"center",padding:18}}>
+          <div style={{background:"#111827",border:"1px solid rgba(124,58,237,.3)",borderRadius:22,padding:22,maxWidth:420,width:"100%",maxHeight:"88vh",overflowY:"auto"}}>
+            <div style={{fontSize:40,textAlign:"center",marginBottom:6}}>🥚</div>
+            <div style={{fontFamily:"var(--fd)",fontSize:21,color:"#fff",textAlign:"center",marginBottom:6}}>Choose your buddy!</div>
+            <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.6)",textAlign:"center",lineHeight:1.5,marginBottom:16}}>This little friend joins you on every lesson adventure. Pick the one you like best!</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {STARTERS.map(s=>(
+                <button key={s.id} onClick={()=>{setBuddy(s.id);setPickBuddy(false);fx("reward",25);setTimeout(()=>startGame(),300);}} style={{display:"flex",alignItems:"center",gap:14,padding:14,borderRadius:16,border:`2px solid ${s.color}55`,background:`linear-gradient(135deg,${s.color}22,${s.color}08)`,cursor:"pointer",textAlign:"left"}}>
+                  <span style={{fontSize:42,filter:`drop-shadow(0 4px 8px ${s.glow}88)`}}>{s.emoji}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"var(--fd)",fontSize:17,color:"#fff"}}>{s.name} <span style={{fontSize:10,fontWeight:800,background:`${s.color}44`,color:s.glow,padding:"2px 8px",borderRadius:100,marginLeft:4}}>{s.type}</span></div>
+                    <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.55)",marginTop:3,lineHeight:1.4}}>{s.blurb}</div>
+                  </div>
+                  <span style={{fontSize:18,color:s.glow}}>→</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={()=>setPickBuddy(false)} style={{display:"block",margin:"14px auto 0",background:"none",border:"none",color:"rgba(255,255,255,.4)",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"var(--fb)"}}>Maybe later</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// PARENT DASHBOARD
+// ═══════════════════════════════════════════════════
+function ParentDash({kids,onResetKid,onLogout}){
+  const [kidStates,setKidStates]=useState({});
+  const [confirmReset,setConfirmReset]=useState(null);  // {kid, mode}
+  // Load each kid's saved state to show real performance
+  useEffect(()=>{ (async()=>{
+    const out={};
+    for(const k of kids){ const st=await loadData(stateKey(k.id)); if(st) out[k.id]=st; }
+    setKidStates(out);
+  })(); },[kids]);
+
+  const kidTotal=(k)=>{ const st=kidStates[k.id]; if(!st) return k.cash||1000; return (st.lastValue ?? ((st.cash||0))); };
+  const kidGain=(k)=>kidTotal(k)-1000;
+
+  return(
+    <div className="dash" style={{background:"linear-gradient(160deg,#021a0e 0%,#052e16 50%,#021a0e 100%)"}}>
+      <div className="topbar">
+        <div className="tb-av" style={{fontSize:22}}>👔</div>
+        <div style={{flex:1}}><div className="tb-name">Parent Dashboard</div><div className="tb-sub">Track your kids' performance</div></div>
+        <div className="tb-chip" style={{background:"rgba(16,185,129,.15)",border:"1px solid rgba(16,185,129,.25)",color:"#86efac"}}>🔐 Verified</div>
+      </div>
+      <div className="main">
+        {kids.length===0?(
+          <div style={{textAlign:"center",padding:"48px 20px"}}>
+            <div style={{fontSize:54,marginBottom:14}}>👶</div>
+            <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",marginBottom:8}}>No kids registered yet!</div>
+            <div style={{fontSize:13,color:"rgba(255,255,255,.55)",fontWeight:600,lineHeight:1.65}}>Ask your kids to open Toybox Trader and create their own account. Their profiles and performance will appear here automatically!</div>
+          </div>
+        ):(
+          kids.map(k=>{
+            const st=kidStates[k.id];
+            const total=kidTotal(k);
+            const gain=kidGain(k);
+            const realised=st?.trades?.filter(t=>t.side==="SELL"&&t.pnl!=null).reduce((s,t)=>s+t.pnl,0)||0;
+            const tradeCount=st?.trades?.length||0;
+            const lessonsDone=st?.doneLesson?.length||0;
+            return(
+              <div key={k.id} style={{background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",borderRadius:"var(--rl)",padding:16,marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+                  <div style={{fontSize:38}}>{k.avatar}</div>
+                  <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff"}}>{k.name}</div><div style={{fontSize:11,color:"rgba(255,255,255,.45)",fontWeight:600}}>Age {k.age} · Joined {k.joinedAt}</div></div>
+                  <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff"}}>{f$(total)}</div><div style={{fontSize:10,color:"rgba(255,255,255,.4)",fontWeight:700}}>Money Garden</div></div>
+                </div>
+                {/* Performance row */}
+                <div style={{display:"flex",gap:8,marginBottom:10}}>
+                  <div style={{flex:1,background:gain>=0?"rgba(16,185,129,.1)":"rgba(239,68,68,.1)",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
+                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase"}}>All-time</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:15,color:gain>=0?"#86efac":"#fca5a5"}}>{gain>=0?"+":""}{f$(gain)}</div>
+                  </div>
+                  <div style={{flex:1,background:realised>=0?"rgba(16,185,129,.1)":"rgba(239,68,68,.1)",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
+                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase"}}>Realised</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:15,color:realised>=0?"#86efac":"#fca5a5"}}>{realised>=0?"+":""}{f$(realised)}</div>
+                  </div>
+                  <div style={{flex:1,background:"rgba(255,255,255,.06)",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
+                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase"}}>Trades</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff"}}>{tradeCount}</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                  {[["🔐","2FA"],["🪙",`${st?.coins??k.coins} coins`],["🎓",`${lessonsDone}/${LESSONS.length} lessons`],["🔥",`${st?.streak??0}d streak`]].map(([ic,lb])=>(
+                    <div key={lb} style={{fontSize:11,fontWeight:800,background:"rgba(255,255,255,.09)",color:"rgba(255,255,255,.7)",padding:"4px 10px",borderRadius:100}}>{ic} {lb}</div>
+                  ))}
+                </div>
+                {/* Recent trades */}
+                {st?.trades?.length>0&&(
+                  <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.08)"}}>
+                    <div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:8}}>Recent Trades</div>
+                    {st.trades.slice(0,3).map(t=>(
+                      <div key={t.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",fontSize:12}}>
+                        <span style={{fontSize:16}}>{t.icon}</span>
+                        <span style={{fontWeight:700,color:"rgba(255,255,255,.7)",flex:1}}>{t.side} {t.name}</span>
+                        <span style={{fontWeight:700,color:"rgba(255,255,255,.5)"}}>{t.date}</span>
+                        {t.side==="SELL"&&t.pnl!=null&&<span style={{fontWeight:800,color:t.pnl>=0?"#86efac":"#fca5a5"}}>{t.pnl>=0?"+":""}{f$(t.pnl)}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* ── Weekly update + discussion prompts ── */}
+                {(()=>{
+                  const allTrades = st?.trades||[];
+                  const sells = allTrades.filter(t=>t.side==="SELL"&&t.pnl!=null);
+                  const bestSell = sells.length? sells.reduce((b,t)=>t.pnl>b.pnl?t:b, sells[0]) : null;
+                  const worstSell= sells.length? sells.reduce((w,t)=>t.pnl<w.pnl?t:w, sells[0]) : null;
+                  const lastBuy = allTrades.find(t=>t.side==="BUY");
+                  // Build discussion prompts from real activity
+                  const prompts=[];
+                  if(bestSell&&bestSell.pnl>0) prompts.push(`Ask ${k.name} why selling ${bestSell.name} worked out — what was the clue it was a good time?`);
+                  if(worstSell&&worstSell.pnl<0) prompts.push(`${k.name} lost money on ${worstSell.name}. Ask what they learned — would they do it differently?`);
+                  if(lastBuy) prompts.push(`Ask ${k.name} what ${lastBuy.name} actually does as a company — do they understand what they own?`);
+                  if(lessonsDone<8) prompts.push(`${k.name} has ${8-lessonsDone} lessons left. Ask which one they want to try next!`);
+                  if(allTrades.length===0) prompts.push(`${k.name} hasn't traded yet. Ask what's holding them back — maybe explore the market together!`);
+                  if(prompts.length===0) prompts.push(`Ask ${k.name} what their strategy is for growing their Money Garden this month.`);
+                  return(
+                    <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.08)"}}>
+                      <div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:8}}>📅 This Week's Summary</div>
+                      <div style={{background:"rgba(255,255,255,.05)",borderRadius:12,padding:12,marginBottom:10}}>
+                        <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.7}}>
+                          {k.name} made <strong style={{color:"#fff"}}>{allTrades.length} trade{allTrades.length!==1?"s":""}</strong>, completed <strong style={{color:"#fff"}}>{lessonsDone} lesson{lessonsDone!==1?"s":""}</strong>, and is <strong style={{color:gain>=0?"#86efac":"#fca5a5"}}>{gain>=0?"up":"down"} {f$(Math.abs(gain))}</strong> overall.
+                          {bestSell&&bestSell.pnl>0&&<> Best trade: <strong style={{color:"#86efac"}}>{bestSell.name} (+{f$(bestSell.pnl)})</strong>.</>}
+                        </div>
+                      </div>
+                      <div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:8}}>💬 Talk About It Together</div>
+                      {prompts.slice(0,3).map((p,i)=>(
+                        <div key={i} style={{display:"flex",gap:8,padding:"7px 0",fontSize:12,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.5}}>
+                          <span style={{flexShrink:0}}>💬</span>{p}
+                        </div>
+                      ))}
+                      {/* Parent controls */}
+                      <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.08)",display:"flex",gap:8}}>
+                        <button onClick={()=>setConfirmReset({kid:k,mode:"reset"})} style={{flex:1,padding:"9px",borderRadius:10,border:"1px solid rgba(245,158,11,.3)",background:"rgba(245,158,11,.1)",color:"#fde68a",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer"}}>🔄 Reset progress</button>
+                        <button onClick={()=>setConfirmReset({kid:k,mode:"remove"})} style={{flex:1,padding:"9px",borderRadius:10,border:"1px solid rgba(239,68,68,.3)",background:"rgba(239,68,68,.1)",color:"#fca5a5",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer"}}>🗑️ Remove account</button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })
+        )}
+        <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,padding:14,marginTop:8}}>
+          <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff",marginBottom:10}}>📋 How it works</div>
+          {["Each kid's progress saves automatically — closing the app never loses their data","You see real profit/loss tracking: all-time gains AND realised P&L from sells","Every buy and sell is logged with date and profit/loss","Kids can't access parent mode — it's behind a separate PIN + 2FA"].map((t,i)=>(
+            <div key={i} style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.6)",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.07)",display:"flex",gap:8}}><span style={{color:"#86efac",flexShrink:0}}>→</span>{t}</div>
+          ))}
+        </div>
+        <button onClick={onLogout} style={{width:"100%",marginTop:16,padding:"12px",borderRadius:13,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"rgba(255,255,255,.3)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>🚪 Log out of Parent Mode</button>
+      </div>
+
+      {/* Reset / remove confirmation */}
+      {confirmReset&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setConfirmReset(null)}>
+          <div style={{background:"#111827",border:"1px solid rgba(239,68,68,.3)",borderRadius:20,padding:24,maxWidth:380,width:"100%"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:40,textAlign:"center",marginBottom:10}}>{confirmReset.mode==="remove"?"🗑️":"🔄"}</div>
+            <div style={{fontFamily:"var(--fd)",fontSize:19,color:"#fff",textAlign:"center",marginBottom:10}}>
+              {confirmReset.mode==="remove"?`Remove ${confirmReset.kid.name}'s account?`:`Reset ${confirmReset.kid.name}'s progress?`}
+            </div>
+            <div style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,.65)",textAlign:"center",lineHeight:1.6,marginBottom:18}}>
+              {confirmReset.mode==="remove"
+                ?"This deletes the account and all progress from this device. They'll need to create a new account (or restore from a backup code)."
+                :`This wipes their portfolio, lessons, badges and trades. They'll start fresh with $1,000. The account stays.`}
+              <br/><br/><strong style={{color:"#fca5a5"}}>This can't be undone</strong> unless you have a backup code.
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirmReset(null)} style={{flex:1,padding:"13px",borderRadius:13,border:"1.5px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.7)",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>Cancel</button>
+              <button onClick={()=>{onResetKid(confirmReset.kid.id,confirmReset.mode);setKidStates(s=>{const n={...s};delete n[confirmReset.kid.id];return n;});setConfirmReset(null);}} style={{flex:1,padding:"13px",borderRadius:13,border:"none",background:"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>{confirmReset.mode==="remove"?"Remove":"Reset"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
