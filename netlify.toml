@@ -9,6 +9,11 @@
 [build.environment]
   NODE_VERSION = "22"
 
+# Serverless functions (Neon-backed cloud storage) live here.
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
 # Single-page app: serve index.html for any path so refreshes and deep
 # links don't 404.
 [[redirects]]
