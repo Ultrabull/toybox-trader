@@ -1,9 +1,11 @@
-// A small, self-contained floating "☁️" widget that lets a parent:
-//   • see this household's Family Sync Code (and copy it),
-//   • link a NEW device by pasting a code from an existing device.
+// Floating "☁️" family-login widget. Lets a parent set up sync once per device:
+//   • Create family  — first time, on the device that has the kids' progress.
+//   • Sign in        — on any other device, to load the same kids.
+//   • Signed-in view — shows who's signed in, with a Sign out button.
 //
-// It's built with plain DOM (no React) and mounted outside the app's root, so
-// it can never interfere with the game itself.
+// Kids never need this — once a device is signed in it stays signed in, so they
+// just open the app and use their profiles as normal. Built with plain DOM so
+// it can't interfere with the game.
 
 export function mountSyncUI() {
   if (typeof document === "undefined") return;
@@ -22,32 +24,32 @@ export function mountSyncUI() {
       align-items:center;justify-content:center;background:rgba(0,0,0,.6);
       padding:18px;font-family:'Nunito',system-ui,sans-serif}
     #tbx-sync-ov.open{display:flex}
-    #tbx-sync-panel{width:100%;max-width:380px;background:#141028;color:#fff;
-      border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:20px;
-      box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:90vh;overflow:auto}
-    #tbx-sync-panel h3{margin:0 0 2px;font-size:19px}
-    #tbx-sync-panel .muted{color:rgba(255,255,255,.6);font-size:12.5px;line-height:1.5}
-    #tbx-sync-panel .lbl{font-size:12px;font-weight:800;letter-spacing:.02em;
-      text-transform:uppercase;color:rgba(255,255,255,.55);margin:16px 0 6px}
-    #tbx-sync-code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;
-      word-break:break-all;background:rgba(255,255,255,.07);border-radius:10px;
-      padding:10px 12px;border:1px solid rgba(255,255,255,.12)}
-    #tbx-sync-panel .row{display:flex;gap:8px;margin-top:8px}
-    #tbx-sync-panel input{flex:1;min-width:0;background:rgba(255,255,255,.07);
-      border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#fff;
-      padding:10px 12px;font-size:14px}
-    #tbx-sync-panel button.act{border:none;border-radius:10px;cursor:pointer;
-      font-weight:800;font-size:13.5px;padding:10px 14px;color:#fff;
+    #tbx-sync-panel{width:100%;max-width:370px;background:#141028;color:#fff;
+      border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:22px;
+      box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto}
+    #tbx-sync-panel h3{margin:0 0 4px;font-size:20px}
+    #tbx-sync-panel .muted{color:rgba(255,255,255,.6);font-size:12.5px;line-height:1.55}
+    #tbx-sync-panel label{display:block;font-size:12px;font-weight:800;
+      color:rgba(255,255,255,.6);margin:14px 0 5px}
+    #tbx-sync-panel input{width:100%;background:rgba(255,255,255,.07);
+      border:1px solid rgba(255,255,255,.14);border-radius:11px;color:#fff;
+      padding:12px 13px;font-size:15px}
+    #tbx-sync-panel input:focus{outline:none;border-color:#9333ea}
+    #tbx-sync-panel button.act{width:100%;margin-top:16px;border:none;border-radius:12px;
+      cursor:pointer;font-weight:800;font-size:15px;padding:13px;color:#fff;
       background:linear-gradient(135deg,#7c3aed,#9333ea)}
-    #tbx-sync-panel button.ghost{background:transparent;border:1px solid rgba(255,255,255,.2);
-      color:rgba(255,255,255,.75);border-radius:10px;cursor:pointer;padding:10px 14px;
-      font-weight:700;font-size:13.5px}
+    #tbx-sync-panel button.act:disabled{opacity:.5;cursor:default}
+    #tbx-sync-panel .link{background:none;border:none;color:#c4b5fd;cursor:pointer;
+      font-size:13px;font-weight:700;padding:0;margin-top:14px;text-decoration:underline}
+    #tbx-sync-panel .ghost{width:100%;margin-top:10px;background:transparent;
+      border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.75);border-radius:12px;
+      cursor:pointer;padding:11px;font-weight:700;font-size:13.5px}
     #tbx-sync-panel .status{display:inline-block;font-size:11px;font-weight:800;
-      padding:3px 9px;border-radius:100px;margin-top:8px}
+      padding:3px 9px;border-radius:100px;margin-top:2px}
     #tbx-sync-panel .status.cloud{background:rgba(16,185,129,.18);color:#6ee7b7}
     #tbx-sync-panel .status.offline{background:rgba(148,163,184,.18);color:#cbd5e1}
-    #tbx-sync-msg{font-size:12.5px;margin-top:8px;min-height:16px}
-    #tbx-sync-hr{border:none;border-top:1px solid rgba(255,255,255,.1);margin:18px 0}
+    #tbx-sync-msg{font-size:12.5px;margin-top:12px;min-height:16px;line-height:1.5}
+    #tbx-sync-close{margin-top:16px}
   `;
   document.head.appendChild(style);
 
@@ -55,92 +57,112 @@ export function mountSyncUI() {
   btn.id = "tbx-sync-btn";
   btn.type = "button";
   btn.textContent = "☁️";
-  btn.title = "Sync across devices";
+  btn.title = "Family sync / sign in";
   document.body.appendChild(btn);
 
   const ov = document.createElement("div");
   ov.id = "tbx-sync-ov";
-  const isCloud = sync.status() === "cloud";
-  ov.innerHTML = `
-    <div id="tbx-sync-panel" role="dialog" aria-label="Sync across devices">
-      <h3>☁️ Sync across devices</h3>
-      <div class="muted">Your kids' accounts &amp; progress are saved to the cloud.
-        Use the code below to load them on another phone, tablet, or computer.</div>
-      <div><span class="status ${isCloud ? "cloud" : "offline"}">${
-        isCloud ? "Cloud connected" : "Offline — local only"
-      }</span></div>
-
-      <div class="lbl">Your Family Sync Code</div>
-      <div id="tbx-sync-code"></div>
-      <div class="row">
-        <button class="act" id="tbx-sync-copy" type="button">Copy code</button>
-      </div>
-      <div class="muted" style="margin-top:8px">Enter this on a new device to load your kids' accounts.</div>
-
-      <hr id="tbx-sync-hr" />
-
-      <div class="lbl">Link this device</div>
-      <div class="muted">Paste a Family Sync Code from another device to load its
-        accounts here. <strong>This replaces whatever is on this device.</strong></div>
-      <div class="row">
-        <input id="tbx-sync-input" placeholder="fam_…" autocomplete="off" spellcheck="false" />
-        <button class="act" id="tbx-sync-link" type="button">Link</button>
-      </div>
-      <div id="tbx-sync-msg"></div>
-
-      <hr id="tbx-sync-hr" />
-      <div class="row" style="justify-content:flex-end">
-        <button class="ghost" id="tbx-sync-close" type="button">Close</button>
-      </div>
-    </div>`;
+  const panel = document.createElement("div");
+  panel.id = "tbx-sync-panel";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "Family sync");
+  ov.appendChild(panel);
   document.body.appendChild(ov);
 
-  const $ = (id: string) => ov.querySelector<HTMLElement>("#" + id)!;
-  const codeEl = $("tbx-sync-code");
-  const msgEl = $("tbx-sync-msg");
-  const input = $("tbx-sync-input") as HTMLInputElement;
+  let mode: "signin" | "create" = "signin";
 
-  const refreshCode = () => {
-    codeEl.textContent = sync.getCode();
-  };
-  const open = () => {
-    refreshCode();
-    msgEl.textContent = "";
-    input.value = "";
-    ov.classList.add("open");
-  };
   const close = () => ov.classList.remove("open");
 
-  btn.addEventListener("click", open);
-  $("tbx-sync-close").addEventListener("click", close);
+  function render() {
+    const st = sync.state();
+    if (st.signedIn) {
+      panel.innerHTML = `
+        <h3>☁️ Family sync</h3>
+        <div><span class="status ${st.status === "cloud" ? "cloud" : "offline"}">${
+          st.status === "cloud" ? "Synced" : "Offline — will resync when online"
+        }</span></div>
+        <p class="muted" style="margin-top:12px">Signed in as <strong>${escapeHtml(
+          st.email || "",
+        )}</strong>.<br/>Your kids' accounts sync automatically across every device you sign in on. The kids just open the app as usual.</p>
+        <button class="ghost" id="tbx-signout" type="button">Sign out on this device</button>
+        <button class="ghost" id="tbx-sync-close" type="button">Close</button>`;
+      panel.querySelector<HTMLButtonElement>("#tbx-signout")!.onclick = () => {
+        sync.signOut();
+        mode = "signin";
+        render();
+      };
+      panel.querySelector<HTMLButtonElement>("#tbx-sync-close")!.onclick = close;
+      return;
+    }
+
+    const creating = mode === "create";
+    panel.innerHTML = `
+      <h3>☁️ ${creating ? "Create your family" : "Sign in to sync"}</h3>
+      <p class="muted">${
+        creating
+          ? "Do this once, on the device that has your kids' accounts. Then sign in with the same email &amp; password on any other device to see them there."
+          : "Sign in with your family email &amp; password to load your kids on this device."
+      }</p>
+      <label for="tbx-email">Email</label>
+      <input id="tbx-email" type="email" inputmode="email" autocomplete="username"
+        placeholder="you@example.com" spellcheck="false" />
+      <label for="tbx-pass">Password</label>
+      <input id="tbx-pass" type="password" autocomplete="${creating ? "new-password" : "current-password"}"
+        placeholder="${creating ? "Choose a password (6+ characters)" : "Your password"}" />
+      <button class="act" id="tbx-submit" type="button">${creating ? "Create family & sync" : "Sign in"}</button>
+      <div id="tbx-sync-msg"></div>
+      <button class="link" id="tbx-toggle" type="button">${
+        creating ? "Already set up? Sign in" : "First time? Create your family"
+      }</button>
+      <button class="ghost" id="tbx-sync-close" type="button">Close</button>`;
+
+    const email = panel.querySelector<HTMLInputElement>("#tbx-email")!;
+    const pass = panel.querySelector<HTMLInputElement>("#tbx-pass")!;
+    const submit = panel.querySelector<HTMLButtonElement>("#tbx-submit")!;
+    const msg = panel.querySelector<HTMLElement>("#tbx-sync-msg")!;
+    email.value = lastEmail;
+
+    submit.onclick = async () => {
+      lastEmail = email.value;
+      msg.style.color = "rgba(255,255,255,.75)";
+      msg.textContent = creating ? "Creating…" : "Signing in…";
+      submit.disabled = true;
+      const res = creating
+        ? await sync.createFamily(email.value, pass.value)
+        : await sync.signIn(email.value, pass.value);
+      submit.disabled = false;
+      if (res.ok) {
+        msg.style.color = "#6ee7b7";
+        msg.textContent = creating ? "Family created! Reloading…" : "Signed in! Loading your kids…";
+        setTimeout(() => location.reload(), 700);
+      } else {
+        msg.style.color = "#fca5a5";
+        msg.textContent = res.error || "Something went wrong.";
+      }
+    };
+    pass.onkeydown = (e) => {
+      if (e.key === "Enter") submit.click();
+    };
+    panel.querySelector<HTMLButtonElement>("#tbx-toggle")!.onclick = () => {
+      mode = creating ? "signin" : "create";
+      render();
+    };
+    panel.querySelector<HTMLButtonElement>("#tbx-sync-close")!.onclick = close;
+  }
+
+  let lastEmail = "";
+
+  btn.addEventListener("click", () => {
+    render();
+    ov.classList.add("open");
+  });
   ov.addEventListener("click", (e) => {
     if (e.target === ov) close();
   });
+}
 
-  $("tbx-sync-copy").addEventListener("click", async () => {
-    const code = sync.getCode();
-    try {
-      await navigator.clipboard.writeText(code);
-      msgEl.style.color = "#6ee7b7";
-      msgEl.textContent = "Copied! ✓";
-    } catch {
-      msgEl.style.color = "#fca5a5";
-      msgEl.textContent = "Couldn't copy automatically — select the code and copy it.";
-    }
-  });
-
-  $("tbx-sync-link").addEventListener("click", async () => {
-    const code = input.value.trim();
-    msgEl.style.color = "rgba(255,255,255,.75)";
-    msgEl.textContent = "Linking…";
-    const res = await sync.link(code);
-    if (res.ok) {
-      msgEl.style.color = "#6ee7b7";
-      msgEl.textContent = "Linked! Reloading…";
-      setTimeout(() => location.reload(), 700);
-    } else {
-      msgEl.style.color = "#fca5a5";
-      msgEl.textContent = res.error || "Couldn't link this device.";
-    }
-  });
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string,
+  );
 }

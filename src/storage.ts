@@ -1,26 +1,28 @@
-// ─── window.storage: cloud-backed, offline-first ────────────────────────────
+// ─── window.storage: cloud-backed, offline-first, with a family login ───────
 //
 // ToyboxFull.tsx persists everything (kids registry + each kid's progress)
 // through `window.storage` (get/set/delete). This module implements that API
 // with two layers:
 //
 //   • localStorage  — instant reads/writes, and a full offline cache.
-//   • Neon (cloud)  — via the /.netlify/functions/kv endpoint, so accounts and
-//                     progress sync across devices.
+//   • Neon (cloud)  — via /.netlify/functions/kv, so accounts sync across
+//                     devices.
 //
-// A household is identified by a "Family Sync Code" (`space`), a long
-// unguessable token stored in localStorage. All cloud rows are scoped to it.
+// A household is a "family": identified by a cloud `space`. Instead of a random
+// per-device code, the space is DERIVED from the parent's email + password
+// using PBKDF2 (100k iterations, in-browser). So signing in with the same
+// email + password on any device lands in the same space and loads the same
+// kids. The password is never stored or sent — only the derived space id is
+// kept locally, which keeps the device "signed in" so kids never have to.
 //
 // Flow:
-//   1. On startup, reconcile() runs once:
-//        - cloud has data  → hydrate localStorage from cloud (cloud wins).
-//        - cloud is empty but this device has local data → upload it (migrate).
-//        - cloud unreachable/not configured → stay in pure-local (offline) mode.
-//   2. Reads come from the (now-reconciled) localStorage cache — fast, sync.
-//   3. Writes hit localStorage immediately and are pushed to cloud (debounced).
+//   • Not signed in  → pure local mode (app works, no sync).
+//   • Create family  → derive space, seed it with this device's local data.
+//   • Sign in        → derive space, pull the family's data onto this device.
+//   • Every startup  → if signed in, reconcile local <-> cloud (cloud wins).
 //
-// If Neon isn't configured yet, everything still works exactly like before —
-// purely local — so the site never breaks while the DB is being set up.
+// If the DB isn't configured, or the device is offline, everything still works
+// locally — the site never breaks.
 
 type StorageRecord = { value: string } | null;
 
@@ -30,10 +32,13 @@ type StorageApi = {
   delete: (key: string, encrypt?: boolean) => Promise<void>;
 };
 
+type Result = { ok: boolean; error?: string };
+
 type SyncApi = {
-  getCode: () => string;
-  status: () => "cloud" | "offline";
-  link: (code: string) => Promise<{ ok: boolean; error?: string }>;
+  state: () => { signedIn: boolean; email: string | null; status: "cloud" | "offline" };
+  createFamily: (email: string, password: string) => Promise<Result>;
+  signIn: (email: string, password: string) => Promise<Result>;
+  signOut: () => void;
 };
 
 declare global {
@@ -44,8 +49,11 @@ declare global {
 }
 
 const API = "/.netlify/functions/kv";
-const PREFIX = "toybox:"; // app-owned keys we cache and migrate
-const SPACE_LS_KEY = "toybox:sync:space"; // holds the Family Sync Code (not synced)
+const PREFIX = "toybox:"; // app-owned keys we cache and sync
+const INTERNAL = "toybox:sync:"; // device-local, never synced
+const SPACE_LS_KEY = "toybox:sync:space"; // derived family space id (kept signed in)
+const EMAIL_LS_KEY = "toybox:sync:email"; // for display only
+const FAMILY_META_KEY = "toybox:family"; // marker row proving a family exists
 
 let cloudOk = false;
 
@@ -62,7 +70,7 @@ const ls = {
     try {
       localStorage.setItem(k, v);
     } catch {
-      /* quota / disabled — ignore, same as the app expects */
+      /* quota / disabled — ignore */
     }
   },
   del(k: string) {
@@ -74,34 +82,17 @@ const ls = {
   },
 };
 
-function genSpace(): string {
-  try {
-    const uuid = crypto?.randomUUID?.();
-    if (uuid) return "fam_" + uuid.replace(/-/g, "");
-  } catch {
-    /* fall through */
-  }
-  let s = "fam_";
-  for (let i = 0; i < 32; i++) s += Math.floor(Math.random() * 16).toString(16);
-  return s;
+function storedSpace(): string | null {
+  return ls.get(SPACE_LS_KEY);
 }
 
-function getSpace(): string {
-  let s = ls.get(SPACE_LS_KEY);
-  if (!s) {
-    s = genSpace();
-    ls.set(SPACE_LS_KEY, s);
-  }
-  return s;
-}
-
-// Every app-owned key currently cached in localStorage (excludes the space id).
+// App-owned keys currently cached locally (excludes device-local sync keys).
 function localAppKeys(): string[] {
   const out: string[] = [];
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.startsWith(PREFIX) && k !== SPACE_LS_KEY) out.push(k);
+      if (k && k.startsWith(PREFIX) && !k.startsWith(INTERNAL)) out.push(k);
     }
   } catch {
     /* ignore */
@@ -109,7 +100,30 @@ function localAppKeys(): string[] {
   return out;
 }
 
-async function api(op: string, extra: Record<string, unknown> = {}, space = getSpace()) {
+// ── derive the family space from email + password (PBKDF2) ────────────
+async function deriveSpace(email: string, password: string): Promise<string> {
+  const enc = new TextEncoder();
+  const normEmail = email.trim().toLowerCase();
+  const salt = enc.encode("toybox-trader:v1:" + normEmail);
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: 100_000, hash: "SHA-256" },
+    keyMaterial,
+    160, // 20 bytes → 40 hex chars
+  );
+  const hex = [...new Uint8Array(bits)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return "fam_" + hex;
+}
+
+async function api(op: string, extra: Record<string, unknown> = {}, space = storedSpace() || "") {
   const res = await fetch(API, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -120,8 +134,6 @@ async function api(op: string, extra: Record<string, unknown> = {}, space = getS
 }
 
 // ── debounced cloud writes ───────────────────────────────────────────
-// The app auto-saves on nearly every state change; coalesce those into at most
-// one cloud write per key every ~800ms so we don't hammer Neon.
 const pending = new Map<string, string>();
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -139,18 +151,17 @@ function scheduleCloudSet(key: string, value: string) {
       try {
         await api("set", { key, value: v });
       } catch {
-        /* keep local copy; will resync on next reconcile */
+        /* keep local; resync next reconcile */
       }
     }, 800),
   );
 }
 
 function flushPending() {
-  if (!pending.size) return;
-  const space = getSpace();
+  if (!pending.size || !cloudOk) return;
+  const space = storedSpace() || "";
   for (const [key, value] of pending) {
     try {
-      // keepalive lets the request finish even as the page is closing.
       fetch(API, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -173,9 +184,13 @@ if (typeof window !== "undefined") {
   });
 }
 
-// ── startup reconcile ────────────────────────────────────────────────
+// ── startup reconcile (only when signed in) ──────────────────────────
 export async function reconcile(timeoutMs = 6000): Promise<void> {
-  const space = getSpace();
+  const space = storedSpace();
+  if (!space) {
+    cloudOk = false; // not signed in → pure local mode
+    return;
+  }
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -192,31 +207,27 @@ export async function reconcile(timeoutMs = 6000): Promise<void> {
 
     const keys = Object.keys(data || {});
     if (keys.length > 0) {
-      // Cloud is the source of truth — refresh the local cache from it.
-      for (const k of keys) ls.set(k, data[k]);
+      for (const k of keys) ls.set(k, data[k]); // cloud wins → refresh cache
     } else {
-      // Cloud is empty. If this device already has accounts, seed the cloud
-      // with them (first-time migration for an existing device).
+      // Signed in but cloud is empty (e.g. just recovered) — reseed from local.
       const local = localAppKeys();
       if (local.length > 0) {
-        await Promise.all(
-          local.map((k) => api("set", { key: k, value: ls.get(k) ?? "" })),
-        );
+        await Promise.all(local.map((k) => api("set", { key: k, value: ls.get(k) ?? "" })));
       }
     }
   } catch {
-    cloudOk = false; // not configured / offline → pure local mode
+    cloudOk = false; // offline / DB down → keep working locally
   }
 }
 
 // ── window.storage implementation ────────────────────────────────────
 const storage: StorageApi = {
   async set(key, value) {
-    ls.set(key, value); // instant + offline
-    scheduleCloudSet(key, value); // debounced cloud push
+    ls.set(key, value);
+    scheduleCloudSet(key, value);
   },
   async get(key) {
-    const v = ls.get(key); // cache is reconciled at startup
+    const v = ls.get(key);
     return v === null ? null : { value: v };
   },
   async delete(key) {
@@ -232,28 +243,90 @@ const storage: StorageApi = {
   },
 };
 
-// ── sync / link-a-device API (used by the floating Sync widget) ──────
+// ── family login API (used by the sign-in widget) ────────────────────
+async function dumpSpace(space: string): Promise<Record<string, string> | null> {
+  try {
+    const res = await fetch(API, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ op: "dump", space }),
+    });
+    if (!res.ok) throw new Error("http " + res.status);
+    const { data } = await res.json();
+    return data || {};
+  } catch {
+    return null; // cloud unreachable
+  }
+}
+
+function persistSession(space: string, email: string) {
+  ls.set(SPACE_LS_KEY, space);
+  ls.set(EMAIL_LS_KEY, email.trim().toLowerCase());
+}
+
 const sync: SyncApi = {
-  getCode: () => getSpace(),
-  status: () => (cloudOk ? "cloud" : "offline"),
-  async link(code) {
-    const clean = (code || "").trim();
-    if (clean.length < 8) return { ok: false, error: "That code looks too short." };
-    if (clean === getSpace()) return { ok: true }; // already this device's code
+  state: () => ({
+    signedIn: !!storedSpace(),
+    email: ls.get(EMAIL_LS_KEY),
+    status: cloudOk ? "cloud" : "offline",
+  }),
+
+  async createFamily(email, password) {
+    const e = email.trim().toLowerCase();
+    if (!e || !/.+@.+\..+/.test(e)) return { ok: false, error: "Enter a valid email." };
+    if ((password || "").length < 6) return { ok: false, error: "Password must be at least 6 characters." };
+    let space: string;
     try {
-      const { data } = await api("dump", {}, clean);
-      const keys = Object.keys(data || {});
-      if (keys.length === 0) {
-        return { ok: false, error: "No accounts found for that code. Double-check it." };
-      }
-      // Adopt the linked household: replace local app data with the cloud copy.
-      for (const k of localAppKeys()) ls.del(k);
-      for (const k of keys) ls.set(k, data[k]);
-      ls.set(SPACE_LS_KEY, clean);
-      return { ok: true };
+      space = await deriveSpace(e, password);
+    } catch {
+      return { ok: false, error: "Your browser blocked secure sign-in. Try Safari/Chrome over https." };
+    }
+    const existing = await dumpSpace(space);
+    if (existing === null) return { ok: false, error: "Couldn't reach the sync server. Check your connection." };
+    if (Object.keys(existing).length > 0) {
+      return { ok: false, error: "An account with this email & password already exists — use Sign in instead." };
+    }
+    // New family: mark it, then seed it with whatever is on this device.
+    persistSession(space, e);
+    cloudOk = true;
+    ls.set(FAMILY_META_KEY, JSON.stringify({ email: e, v: 1 }));
+    try {
+      const keys = localAppKeys();
+      await Promise.all(keys.map((k) => api("set", { key: k, value: ls.get(k) ?? "" }, space)));
     } catch {
       return { ok: false, error: "Couldn't reach the sync server. Check your connection." };
     }
+    return { ok: true };
+  },
+
+  async signIn(email, password) {
+    const e = email.trim().toLowerCase();
+    if (!e || !/.+@.+\..+/.test(e)) return { ok: false, error: "Enter a valid email." };
+    if (!password) return { ok: false, error: "Enter your password." };
+    let space: string;
+    try {
+      space = await deriveSpace(e, password);
+    } catch {
+      return { ok: false, error: "Your browser blocked secure sign-in. Try Safari/Chrome over https." };
+    }
+    const data = await dumpSpace(space);
+    if (data === null) return { ok: false, error: "Couldn't reach the sync server. Check your connection." };
+    if (Object.keys(data).length === 0) {
+      return { ok: false, error: "No family found with that email & password. Check your details, or create a family." };
+    }
+    // Adopt the family on this device: replace local app data with the cloud copy.
+    for (const k of localAppKeys()) ls.del(k);
+    for (const k of Object.keys(data)) ls.set(k, data[k]);
+    persistSession(space, e);
+    cloudOk = true;
+    return { ok: true };
+  },
+
+  signOut() {
+    flushPending();
+    ls.del(SPACE_LS_KEY);
+    ls.del(EMAIL_LS_KEY);
+    cloudOk = false;
   },
 };
 
