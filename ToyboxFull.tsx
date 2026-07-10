@@ -333,6 +333,19 @@ const LB_BASE = [
 ];
 
 // ─── Spin prizes ───────────────────────────────────
+// ─── Daily login bonus ladder (7-day cycle) ─────────
+// Escalating rewards for coming back each day. Day 7 is the jackpot, unlocked
+// only if a lesson was done in the past week (learning pulls the reward).
+const DAILY_BONUS = [
+  {coins:20},
+  {coins:40},
+  {coins:60, tokens:1},
+  {coins:90},
+  {coins:100, card:1},
+  {coins:150},
+  {coins:300, cash:100, card:1, jackpot:true},
+];
+
 const SPIN_PRIZES = [
   {label:"50 Coins",   icon:"🪙",  type:"coins",  val:50},
   {label:"$25 Cash",   icon:"💵",  type:"cash",   val:25},
@@ -952,6 +965,10 @@ function KidDash({user,savedState,onLogout}){
   const [limitPrice,  setLimitPrice]  = useState(0);                             // target price for limit
   const [pendingOrders,setPending]    = useState(S.pendingOrders || []);         // queued/limit orders
   const warnedOrders = useRef(new Set());  // orders we've already shown a "not enough cash" toast for
+  const [lastBonusClaim,setLastBonusClaim] = useState(S.lastBonusClaim ?? null); // date daily bonus last claimed
+  const [lastLessonAt, setLastLessonAt]    = useState(S.lastLessonAt ?? null);   // when a lesson was last completed (jackpot gate)
+  const [showDailyBonus,setShowDailyBonus] = useState(false);                    // daily-bonus popup open
+  const [bonusResult,  setBonusResult]     = useState(null);                     // what the claim awarded
   const [orderToast,  setOrderToast]  = useState(null);                          // "order filled!" toast
   const [success,     setSuccess]     = useState(null);
   const [cashReward,  setCashReward]  = useState(null);                          // lesson cash pop
@@ -975,7 +992,7 @@ function KidDash({user,savedState,onLogout}){
   const [doneLesson,   setDoneLesson] = useState(S.doneLesson || []);
   const [doneMission, setDoneMission] = useState(S.doneMission || []);
   const [tourStep,    setTourStep]    = useState(1);
-  const [tourDone,    setTourDone]    = useState(false);
+  const [tourDone,    setTourDone]    = useState(S.tourDone ?? false);  // persisted: intro tour shows only once
   const [predictions, setPreds]       = useState(S.predictions || []);            // 10 — predictions
   const [predSel,     setPredSel]     = useState(null);
   const [clubPool,    setClubPool]    = useState(S.clubPool || {total:0,members:[]}); // 11 — investment club
@@ -1047,7 +1064,7 @@ function KidDash({user,savedState,onLogout}){
   // AUTO-SAVE: persist all state whenever anything important changes
   useEffect(()=>{
     if(!hydrated||!user?.id) return;
-    const snapshot = {cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastValue:totalValue,lastActive:Date.now()};
+    const snapshot = {cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
     saveData(stateKey(user.id), snapshot);
   },[cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,hydrated]);
 
@@ -1143,7 +1160,7 @@ function KidDash({user,savedState,onLogout}){
     const account={id:user.id,name:user.name,avatar:user.avatar,age:user.age,email:user.email,pin:user.pin,theme:user.theme,joinedAt:user.joinedAt};
     // Mirror the auto-save snapshot exactly, so a restore brings back
     // EVERYTHING — pet buddy, equipped cosmetics, pending orders, token day.
-    const state={cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastValue:totalValue,lastActive:Date.now()};
+    const state={cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
     const code=makeBackupCode(account,state);
     setBackupCode(code); setCopied(false); fx("reward",20);
   };
@@ -1528,9 +1545,16 @@ function KidDash({user,savedState,onLogout}){
     setLesson(null);
   };
 
+  // Grant a rare collectible card (used by the daily bonus + spin wheel).
+  const grantRareCard = () => {
+    const a = MARKET[Math.floor(Math.random()*MARKET.length)];
+    setInvCards(cs=>[...cs,{id:Date.now()+Math.random(),ticker:a.ticker,name:a.name,icon:a.icon,color:a.color,buyPrice:prices[a.ticker]||a.basePrice,qty:0,earnedAt:new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short"}),tier:"✨ Rare"}]);
+  };
+
   const completeLesson = id => {
     const ls = LESSONS.find(l=>l.id===id);
     if(!ls) return;
+    setLastLessonAt(Date.now());  // any lesson pass counts toward the weekly jackpot gate
     // Reward only granted after passing the quiz (called from answerQuiz)
     if(!doneLesson.includes(id)){
       const reward = ls.cashReward||50;
@@ -1567,7 +1591,31 @@ function KidDash({user,savedState,onLogout}){
       if(prize.type==="coins")setCoins(c=>c+prize.val);
       if(prize.type==="cash") setCash(c=>c+prize.val);
       if(prize.type==="xp")   setXp(x=>x+prize.val);
+      if(prize.type==="card") grantRareCard();  // previously unhandled — card prize gave nothing
     },4100);
+  };
+
+  // ── Daily login bonus ──
+  // Show the popup once per calendar day. Runs after hydration so streak (set
+  // by the streak effect) is settled and lastBonusClaim is loaded.
+  useEffect(()=>{
+    if(!hydrated || !tourDone) return;  // wait until the intro tour is dismissed
+    if(lastBonusClaim !== new Date().toDateString()) setShowDailyBonus(true);
+  },[hydrated,tourDone]);
+
+  const claimDailyBonus = () => {
+    const idx = (Math.max(1,streak)-1)%7;             // 0..6 → day 1..7
+    const r = DAILY_BONUS[idx];
+    const learnedThisWeek = lastLessonAt && (Date.now()-lastLessonAt < 7*86400000);
+    const locked = !!r.jackpot && !learnedThisWeek;
+    const award = locked ? {coins:100} : r;           // jackpot locked → coins-only consolation
+    if(award.coins)  setCoins(c=>c+award.coins);
+    if(award.cash)   setCash(c=>c+award.cash);
+    if(award.tokens) setTokens(t=>t+award.tokens);
+    if(award.card)   grantRareCard();
+    setLastBonusClaim(new Date().toDateString());
+    setBonusResult({...award, day:idx+1, jackpot:!!r.jackpot, locked});
+    fx("reward",30);
   };
 
   const startChallenge=sib=>{
@@ -2647,6 +2695,51 @@ function KidDash({user,savedState,onLogout}){
       )}
 
       {/* New badge earned popup */}
+      {/* Daily login bonus */}
+      {showDailyBonus&&(()=>{
+        const todayIdx=(Math.max(1,streak)-1)%7;
+        const learnedThisWeek=lastLessonAt&&(Date.now()-lastLessonAt<7*86400000);
+        const rewardText=r=>[r.coins&&`🪙 ${r.coins}`,r.cash&&`💵 $${r.cash}`,r.tokens&&`🎟️ ${r.tokens}`,r.card&&`✨ Rare Card`].filter(Boolean).join("  ");
+        return(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:360,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:14,padding:24}}>
+          {!bonusResult?(
+            <div style={{background:"#141028",border:"1px solid rgba(255,255,255,.14)",borderRadius:20,padding:24,maxWidth:360,width:"100%",textAlign:"center"}}>
+              <div style={{fontSize:56,animation:"popUp .6s cubic-bezier(.34,1.56,.64,1)"}}>🎁</div>
+              <div style={{fontFamily:"var(--fd)",fontSize:22,color:"#fff",marginTop:4}}>Daily Bonus!</div>
+              <div style={{fontSize:13,fontWeight:800,color:"#fbbf24",marginBottom:14}}>🔥 {Math.max(1,streak)}-day streak — welcome back, {user?.name}!</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:5,marginBottom:16}}>
+                {DAILY_BONUS.map((r,i)=>{
+                  const done=i<todayIdx, today=i===todayIdx;
+                  return(
+                    <div key={i} style={{borderRadius:9,padding:"7px 2px",background:today?"rgba(251,191,36,.22)":done?"rgba(16,185,129,.16)":"rgba(255,255,255,.05)",border:`1.5px solid ${today?"#fbbf24":done?"rgba(16,185,129,.4)":"rgba(255,255,255,.1)"}`}}>
+                      <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.5)"}}>D{i+1}</div>
+                      <div style={{fontSize:15}}>{r.jackpot?"🎁":done?"✅":r.card?"✨":"🪙"}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",marginBottom:4}}>Today you get</div>
+              <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff",marginBottom:10}}>{rewardText(DAILY_BONUS[todayIdx])}</div>
+              {DAILY_BONUS[todayIdx].jackpot&&(
+                <div style={{fontSize:12,fontWeight:800,color:learnedThisWeek?"#86efac":"#fca5a5",background:learnedThisWeek?"rgba(16,185,129,.12)":"rgba(239,68,68,.12)",borderRadius:11,padding:"9px 12px",marginBottom:12,lineHeight:1.5}}>
+                  {learnedThisWeek?"🎉 JACKPOT UNLOCKED — you did a lesson this week!":"🔒 Jackpot locked! Do any lesson this week to unlock the full $100 + 300 🪙. For now you'll get 100 🪙."}
+                </div>
+              )}
+              <button onClick={claimDailyBonus} style={{width:"100%",padding:15,borderRadius:14,border:"none",background:"linear-gradient(135deg,#f59e0b,#f97316)",color:"#fff",fontFamily:"var(--fd)",fontSize:17,cursor:"pointer",boxShadow:"0 6px 22px rgba(245,158,11,.45)"}}>Claim reward! 🎉</button>
+            </div>
+          ):(
+            <div style={{background:"#141028",border:"1px solid rgba(255,255,255,.14)",borderRadius:20,padding:26,maxWidth:340,width:"100%",textAlign:"center"}}>
+              <div style={{fontSize:64,animation:"popUp .6s cubic-bezier(.34,1.56,.64,1)"}}>{bonusResult.jackpot&&!bonusResult.locked?"🎁":"🪙"}</div>
+              <div style={{fontFamily:"var(--fd)",fontSize:22,color:"#fff",margin:"6px 0"}}>{bonusResult.jackpot&&!bonusResult.locked?"JACKPOT!":"Nice!"}</div>
+              <div style={{fontSize:15,fontWeight:800,color:"#fbbf24",marginBottom:6}}>{rewardText(bonusResult)||`🪙 ${bonusResult.coins}`}</div>
+              {bonusResult.locked&&<div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",marginBottom:10,lineHeight:1.5}}>Do a lesson this week and next Day 7 you'll grab the full jackpot! 📚</div>}
+              <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.5)",marginBottom:14}}>Come back tomorrow to keep your streak alive! 🔥</div>
+              <button onClick={()=>{setShowDailyBonus(false);setBonusResult(null);}} style={{width:"100%",padding:14,borderRadius:13,border:"none",background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer"}}>Let's go! 🚀</button>
+            </div>
+          )}
+        </div>
+      );})()}
+
       {newBadge&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.9)",zIndex:350,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:14,padding:24}}>
           <div style={{fontSize:80,animation:"popUp .6s cubic-bezier(.34,1.56,.64,1)"}}>{newBadge.icon}</div>
