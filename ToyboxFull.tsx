@@ -97,32 +97,34 @@ const toRobux = d => Math.round(d*10).toLocaleString();
 
 // ─── Market data ───────────────────────────────────
 const MARKET = [
-  {ticker:"AAPL",name:"Apple",   type:"stock", basePrice:195.40,icon:"🍎",color:"#6366f1",
+  {ticker:"AAPL",name:"Apple",   type:"stock", basePrice:250.00,icon:"🍎",color:"#6366f1",
    tagline:"Makes iPhones — billions sold every year",risk:"low",
    kidEx:"Apple is like the most popular kid at school. Every iPhone your parents buy makes Apple richer — and you too if you own a block!",
    news:"📱 iPhone 16 launched! Massive lines outside stores worldwide.",newsGood:true,trend:"up"},
-  {ticker:"RBLX",name:"Roblox",  type:"stock", basePrice:51.30, icon:"🎮",color:"#ec4899",
+  {ticker:"RBLX",name:"Roblox",  type:"stock", basePrice:115.00,icon:"🎮",color:"#ec4899",
    tagline:"70 million kids play this every single day",risk:"medium",
    kidEx:"Every time someone buys Robux, Roblox earns money. Own a block and get a tiny slice of every Robux purchase!",
    news:"🎮 Roblox hit 71 million daily players — biggest ever!",newsGood:true,trend:"up"},
-  {ticker:"DIS", name:"Disney",  type:"stock", basePrice:89.20, icon:"🏰",color:"#8b5cf6",
+  {ticker:"DIS", name:"Disney",  type:"stock", basePrice:112.00,icon:"🏰",color:"#8b5cf6",
    tagline:"Owns Marvel, Star Wars, Frozen & Disney+",risk:"low",
    kidEx:"Disney owns almost every movie you love. Every cinema ticket and Disney+ subscription earns them money!",
    news:"🎬 New Marvel movie broke box office records on opening weekend!",newsGood:true,trend:"flat"},
-  {ticker:"NVDA",name:"Nvidia",  type:"stock", basePrice:875.50,icon:"🖥️",color:"#10b981",
+  {ticker:"NVDA",name:"Nvidia",  type:"stock", basePrice:175.00,icon:"🖥️",color:"#10b981",
    tagline:"Their chips power every video game AND every AI",risk:"medium",
    kidEx:"Your PS5, Xbox and every AI chatbot runs on Nvidia chips. They power gaming AND AI!",
    news:"🤖 Every major AI company ordered billions of Nvidia chips!",newsGood:true,trend:"up"},
-  {ticker:"BTC", name:"Bitcoin", type:"crypto",basePrice:67400, icon:"₿", color:"#f59e0b",
+  {ticker:"BTC", name:"Bitcoin", type:"crypto",basePrice:100000,icon:"₿", color:"#f59e0b",
    tagline:"Only 21 million ever — like limited Pokémon cards",risk:"high",
    kidEx:"Only 21 million Bitcoins will EVER exist. Like a limited holographic Pokémon card — if everyone wants it, price goes up!",
    news:"⚠️ Bitcoin dropped 12% then bounced 8%. Very volatile this week!",newsGood:false,trend:"volatile"},
-  {ticker:"ETH", name:"Ethereum",type:"crypto",basePrice:3540,  icon:"⟠",color:"#06b6d4",
+  {ticker:"ETH", name:"Ethereum",type:"crypto",basePrice:3500,  icon:"⟠",color:"#06b6d4",
    tagline:"Digital money that runs thousands of apps",risk:"high",
    kidEx:"Ethereum is like Roblox's currency system but for the whole internet. More apps = more demand!",
    news:"⚠️ Ethereum fell 10% this week. Crypto markets very shaky.",newsGood:false,trend:"volatile"},
 ];
-const INIT_PRICES = {AAPL:195.40,RBLX:51.30,DIS:89.20,NVDA:875.50,BTC:67400,ETH:3540};
+// Approximate fallback prices — only shown if the live price feed is
+// unreachable. The Netlify /prices function overrides these with real quotes.
+const INIT_PRICES = {AAPL:250.00,RBLX:115.00,DIS:112.00,NVDA:175.00,BTC:100000,ETH:3500};
 
 // ─── Lessons with adventure map ────────────────────
 const LESSONS = [
@@ -1088,20 +1090,22 @@ function KidDash({user,savedState,onLogout}){
     setShopMsg(`Now using ${item.name}! ✨`); fx("coin",15); setTimeout(()=>setShopMsg(null),2000);
   };
 
-  // ── Real prices from Yahoo Finance + CoinGecko ──
+  // ── Real prices via our server-side price feed (Netlify function) ──
+  // Fetching server-side avoids the CORS/proxy issues that made the old direct
+  // browser calls fail. refPrice holds each asset's previous close so the % on
+  // the cards is the real daily change, not a jump from a stale base price.
   const [priceSource,setPriceSource]=useState("simulated");
+  const [refPrice,setRefPrice]=useState({});
   const fetchRealPrices=async()=>{
     try{
-      const yUrl=`https://query1.finance.yahoo.com/v8/finance/spark?symbols=AAPL,RBLX,DIS,NVDA&range=1d&interval=5m`;
-      const proxy=`https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`;
-      const [s,c]=await Promise.all([
-        fetch(proxy,{signal:AbortSignal.timeout(6000)}),
-        fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd",{signal:AbortSignal.timeout(6000)}),
-      ]);
-      const upd={};
-      if(s.ok){const d=await s.json();(d?.spark?.result||[]).forEach(it=>{const last=(it.response?.[0]?.indicators?.quote?.[0]?.close||[]).filter(Boolean).pop();if(last>0)upd[it.symbol]=last;});}
-      if(c.ok){const cd=await c.json();if(cd.bitcoin?.usd)upd.BTC=cd.bitcoin.usd;if(cd.ethereum?.usd)upd.ETH=cd.ethereum.usd;}
-      if(Object.keys(upd).length){setPrices(p=>({...p,...upd}));setPriceSource("live");}
+      const r=await fetch("/.netlify/functions/prices",{signal:AbortSignal.timeout(8000)});
+      if(!r.ok) throw new Error("http "+r.status);
+      const d=await r.json();
+      if(d?.prices&&Object.keys(d.prices).length){
+        setPrices(p=>({...p,...d.prices}));
+        if(d.prev&&Object.keys(d.prev).length) setRefPrice(rp=>({...rp,...d.prev}));
+        setPriceSource("live");
+      }
     }catch(e){setPriceSource("simulated");}
   };
   useEffect(()=>{fetchRealPrices();const id=setInterval(fetchRealPrices,60000);return()=>clearInterval(id);},[]);
@@ -1703,7 +1707,7 @@ function KidDash({user,savedState,onLogout}){
             <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",margin:"14px 0 10px"}}>📊 Live Market</div>
             {MARKET.slice(0,4).map(a=>{
               const cur=prices[a.ticker]||a.basePrice;
-              const chg=parseFloat(pct(cur,a.basePrice));
+              const chg=parseFloat(pct(cur,refPrice[a.ticker]||a.basePrice));
               return(
                 <div key={a.ticker} onClick={()=>openTrade(a)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.09)",borderRadius:13,cursor:"pointer",marginBottom:8}}>
                   <div style={{width:36,height:36,borderRadius:10,background:a.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{a.icon}</div>
@@ -1743,7 +1747,7 @@ function KidDash({user,savedState,onLogout}){
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
               {MARKET.filter(a=>tradeTab==="all"||a.type===tradeTab).map(a=>{
-                const cur=prices[a.ticker]||a.basePrice;const chg=parseFloat(pct(cur,a.basePrice));
+                const cur=prices[a.ticker]||a.basePrice;const chg=parseFloat(pct(cur,refPrice[a.ticker]||a.basePrice));
                 return(
                   <div key={a.ticker} onClick={()=>openTrade(a)} style={{borderRadius:14,padding:14,cursor:"pointer",position:"relative",overflow:"hidden",background:`linear-gradient(135deg,${a.color}bb,${a.color}55)`,border:`1px solid ${a.color}44`,transition:"all .2s"}}>
                     <div style={{position:"absolute",top:9,right:9,fontSize:9,fontWeight:800,background:"rgba(0,0,0,.25)",padding:"2px 7px",borderRadius:100,color:"rgba(255,255,255,.75)",textTransform:"uppercase"}}>{a.type==="stock"?"Block":"Card"}</div>
