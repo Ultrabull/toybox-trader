@@ -951,6 +951,7 @@ function KidDash({user,savedState,onLogout}){
   const [orderType,   setOrderType]   = useState("market");                      // market | limit
   const [limitPrice,  setLimitPrice]  = useState(0);                             // target price for limit
   const [pendingOrders,setPending]    = useState(S.pendingOrders || []);         // queued/limit orders
+  const warnedOrders = useRef(new Set());  // orders we've already shown a "not enough cash" toast for
   const [orderToast,  setOrderToast]  = useState(null);                          // "order filled!" toast
   const [success,     setSuccess]     = useState(null);
   const [cashReward,  setCashReward]  = useState(null);                          // lesson cash pop
@@ -1015,12 +1016,32 @@ function KidDash({user,savedState,onLogout}){
   // Tokens are a per-DAY allowance. Whenever it's a new calendar day (or a
   // brand-new account with no record), top tokens back up to DAILY_TOKENS.
   // Never reduces tokens (so buying Extra Trade Tokens still works).
+  // Checked every minute too, so a tablet left open overnight refills at
+  // midnight instead of waiting for a reload.
   useEffect(()=>{
-    const today = new Date().toDateString();
-    if(tokenDay !== today){
-      setTokens(t => Math.max(t, DAILY_TOKENS));
-      setTokenDay(today);
-    }
+    const check = () => {
+      const today = new Date().toDateString();
+      if(tokenDay !== today){
+        setTokens(t => Math.max(t, DAILY_TOKENS));
+        setTokenDay(today);
+      }
+    };
+    check();
+    const id = setInterval(check, 60000);
+    return ()=>clearInterval(id);
+  },[tokenDay]);
+
+  // ── Real daily streak ──
+  // Compare the last time this kid played (saved as lastActive) with today:
+  // came back the very next day → streak +1; skipped a day or more → back to 1;
+  // same-day reopen → unchanged. Runs once per login.
+  useEffect(()=>{
+    if(!S.lastActive) return;
+    const last = new Date(S.lastActive), now = new Date();
+    const startOfDay = d => new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
+    const daysApart = Math.round((startOfDay(now)-startOfDay(last))/86400000);
+    if(daysApart===1){ setStreak(s=>s+1); fx("coin",15); }
+    else if(daysApart>1) setStreak(1);
   },[]);
 
   // AUTO-SAVE: persist all state whenever anything important changes
@@ -1053,12 +1074,76 @@ function KidDash({user,savedState,onLogout}){
     });
   },[trades,doneLesson,portfolio,totalValue,streak,invCards,predictions,xp,hydrated]);
 
+  // ── Family Leaderboard (fulfils the "Monthly winners" promise) ──
+  // Every kid's state lives in the family's cloud space and is synced to this
+  // device at app load, so the board is built from local reads. Each kid's
+  // value at their first login of the month is saved as the baseline, and the
+  // board ranks by % gain since then.
+  const monthKey = (()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;})();
+  const [famBoard,setFamBoard] = useState([]);
+  useEffect(()=>{ (async()=>{
+    if(!hydrated||!user?.id) return;
+    const k=`toybox:kid:${user.id}:mbase:${monthKey}`;
+    const existing = await loadData(k);
+    if(!existing || !(existing.value>0)) await saveData(k,{value:totalValue,at:Date.now()});
+  })(); },[hydrated]);
+  useEffect(()=>{ (async()=>{
+    if(!hydrated) return;
+    const reg = await loadData(KIDS_KEY);
+    if(!Array.isArray(reg)||reg.length===0){ setFamBoard([]); return; }
+    const rows=[];
+    for(const k of reg){
+      const isMe = k.id===user?.id;
+      const st = isMe ? null : await loadData(stateKey(k.id));
+      const kidCash = isMe ? cash : (st?.cash ?? k.cash ?? 0);
+      const port = isMe ? portfolio : (st?.portfolio || []);
+      let value = kidCash;
+      port.forEach(h=>{ value += (h.qty||0) * (prices[h.ticker] ?? h.avgCost ?? 0); });
+      const base = await loadData(`toybox:kid:${k.id}:mbase:${monthKey}`);
+      const gain = base?.value>0 ? ((value-base.value)/base.value)*100 : null;
+      rows.push({id:k.id,name:k.name,avatar:k.avatar,value,gain,isMe});
+    }
+    rows.sort((a,b)=>((b.gain??-1e9)-(a.gain??-1e9)) || (b.value-a.value));
+    setFamBoard(rows);
+  })(); },[hydrated,prices,cash,portfolio]);
+
+  // ── Resolve due predictions (7 days after they were made) ──
+  // Compares against the live price and pays the promised +50 XP / +25 coins
+  // per correct call. Runs whenever prices refresh; already-resolved
+  // predictions are skipped, so this is safe to re-run.
+  useEffect(()=>{
+    if(!hydrated) return;
+    const now = Date.now();
+    const isDue = p => p.status==="open" && now - p.id >= 7*86400000;
+    const due = predictions.filter(isDue);
+    if(due.length===0) return;
+    // Compute results synchronously (NOT inside the setPreds updater, which
+    // React defers) so the payout below sees the real win count.
+    let wins=0, losses=0, lastResolved=null;
+    const next = predictions.map(p=>{
+      if(!isDue(p)) return p;
+      const cur = prices[p.ticker] ?? INIT_PRICES[p.ticker] ?? p.price;
+      const correct = p.dir==="UP" ? cur>p.price : cur<p.price;
+      if(correct) wins++; else losses++;
+      lastResolved = {...p,status:"resolved",correct,resultPrice:cur};
+      return lastResolved;
+    });
+    setPreds(next);
+    if(wins>0){ setXp(x=>x+50*wins); setCoins(c=>c+25*wins); fx("reward",30); }
+    if(lastResolved){
+      setOrderToast({type:"pred",name:lastResolved.name,correct:lastResolved.correct,wins,count:wins+losses});
+      setTimeout(()=>setOrderToast(null),6000);
+    }
+  },[hydrated,prices,predictions]);
+
   // ── Backup / Restore ──
   const [backupCode,setBackupCode]=useState(null);
   const [copied,setCopied]=useState(false);
   const generateBackup=()=>{
     const account={id:user.id,name:user.name,avatar:user.avatar,age:user.age,email:user.email,pin:user.pin,theme:user.theme,joinedAt:user.joinedAt};
-    const state={cash,coins,xp,tokens,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,earnedBadges,goal,lastValue:totalValue,lastActive:Date.now()};
+    // Mirror the auto-save snapshot exactly, so a restore brings back
+    // EVERYTHING — pet buddy, equipped cosmetics, pending orders, token day.
+    const state={cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastValue:totalValue,lastActive:Date.now()};
     const code=makeBackupCode(account,state);
     setBackupCode(code); setCopied(false); fx("reward",20);
   };
@@ -1243,34 +1328,10 @@ function KidDash({user,savedState,onLogout}){
     for(const tk of tickers){
       const ord = open.find(o=>o.ticker===tk);
       const since = ord.placedAt || (Date.now()-86400000); // default 1 day back
-      const isCrypto = ord.type==="crypto";
       try {
-        if(isCrypto){
-          // CoinGecko market_chart: prices over range (free, CORS-friendly)
-          const id = tk==="BTC"?"bitcoin":"ethereum";
-          const days = Math.max(1, Math.ceil((Date.now()-since)/86400000));
-          const r = await fetch(`https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${days}`,{signal:AbortSignal.timeout(7000)});
-          if(r.ok){ const d=await r.json(); history[tk]=(d.prices||[]).filter(p=>p[0]>=since).map(p=>({t:p[0],lo:p[1],hi:p[1]})); }
-        } else {
-          // Yahoo Finance intraday via proxy: 5-min candles for the day
-          const yUrl=`https://query1.finance.yahoo.com/v8/finance/chart/${tk}?interval=5m&range=5d`;
-          const proxy=`https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`;
-          const r = await fetch(proxy,{signal:AbortSignal.timeout(8000)});
-          if(r.ok){
-            const d=await r.json();
-            const res=d?.chart?.result?.[0];
-            const ts=res?.timestamp||[];
-            const q=res?.indicators?.quote?.[0]||{};
-            const candles=[];
-            for(let i=0;i<ts.length;i++){
-              const tms=ts[i]*1000;
-              if(tms<since) continue;
-              const lo=q.low?.[i], hi=q.high?.[i];
-              if(lo!=null&&hi!=null) candles.push({t:tms,lo,hi});
-            }
-            history[tk]=candles;
-          }
-        }
+        // Candles come from our own server function (reliable, no CORS/proxy)
+        const r = await fetch(`/.netlify/functions/prices?history=${tk}&since=${since}`,{signal:AbortSignal.timeout(8000)});
+        if(r.ok){ const d=await r.json(); if(Array.isArray(d.candles)&&d.candles.length) history[tk]=d.candles; }
       } catch(e){ /* no history for this ticker — will fall through to live check */ }
     }
 
@@ -1296,17 +1357,34 @@ function KidDash({user,savedState,onLogout}){
     });
 
     if(fills.length>0){
+      // Same affordability rules as live matching: unaffordable orders stay
+      // pending rather than silently disappearing.
+      const executed=[]; let short=null; let cashLeft=cash;
       fills.forEach(({ord,fillPrice})=>{
-        if(ord.side==="buy" && fillPrice*ord.qty>cash) return;
         const held=portfolio.find(p=>p.ticker===ord.ticker)?.qty||0;
-        if(ord.side==="sell" && held<ord.qty) return;
+        const cost=fillPrice*ord.qty;
+        if((ord.side==="buy" && cost>cashLeft) || (ord.side==="sell" && held<ord.qty)){
+          stillOpen.push(ord);
+          if(ord.side==="buy" && !warnedOrders.current.has(ord.id)){
+            warnedOrders.current.add(ord.id);
+            short={name:ord.name,needed:cost};
+          }
+          return;
+        }
+        cashLeft += ord.side==="buy" ? -cost : cost;
         fillOrder({ticker:ord.ticker,name:ord.name,type:ord.type,icon:ord.icon,color:ord.color,side:ord.side,qty:ord.qty,price:fillPrice});
+        executed.push({ord,fillPrice});
       });
-      const last=fills[fills.length-1];
       setPending(stillOpen);
-      setOrderToast({type:"backfill",name:last.ord.name,side:last.ord.side,price:last.fillPrice,count:fills.length});
-      fx("reward",30);
-      setTimeout(()=>setOrderToast(null),5000);
+      if(executed.length>0){
+        const last=executed[executed.length-1];
+        setOrderToast({type:"backfill",name:last.ord.name,side:last.ord.side,price:last.fillPrice,count:executed.length});
+        fx("reward",30);
+        setTimeout(()=>setOrderToast(null),5000);
+      } else if(short){
+        setOrderToast({type:"insufficient",name:short.name,needed:short.needed});
+        setTimeout(()=>setOrderToast(null),6000);
+      }
     }
   };
 
@@ -1333,14 +1411,30 @@ function KidDash({user,savedState,onLogout}){
         }
       });
       if(filled.length>0){
+        // Fill what the kid can afford; anything unaffordable stays PENDING
+        // (never silently deleted) and we tell them why — once per order.
+        const executed=[]; let short=null; let cashLeft=cash;
         filled.forEach(({ord,fillPrice})=>{
-          if(ord.side==="buy" && fillPrice*ord.qty>cash) return;
           const held=portfolio.find(p=>p.ticker===ord.ticker)?.qty||0;
-          if(ord.side==="sell" && held<ord.qty) return;
+          const cost=fillPrice*ord.qty;
+          if((ord.side==="buy" && cost>cashLeft) || (ord.side==="sell" && held<ord.qty)){
+            stillPending.push(ord);
+            if(ord.side==="buy" && !warnedOrders.current.has(ord.id)){
+              warnedOrders.current.add(ord.id);
+              short={name:ord.name,needed:cost};
+            }
+            return;
+          }
+          cashLeft += ord.side==="buy" ? -cost : cost;
           fillOrder({ticker:ord.ticker,name:ord.name,type:ord.type,icon:ord.icon,color:ord.color,side:ord.side,qty:ord.qty,price:fillPrice});
+          executed.push({ord,fillPrice});
         });
-        const lastFill=filled[filled.length-1];
-        setOrderToast({type:"filled",name:lastFill.ord.name,side:lastFill.ord.side,price:lastFill.fillPrice,count:filled.length});
+        if(executed.length===0){
+          if(short){ setOrderToast({type:"insufficient",name:short.name,needed:short.needed}); setTimeout(()=>setOrderToast(null),6000); }
+          return stillPending;
+        }
+        const lastFill=executed[executed.length-1];
+        setOrderToast({type:"filled",name:lastFill.ord.name,side:lastFill.ord.side,price:lastFill.fillPrice,count:executed.length});
         fx("reward",25);
         setTimeout(()=>setOrderToast(null),4500);
       }
@@ -1482,7 +1576,7 @@ function KidDash({user,savedState,onLogout}){
 
   const makePred=(asset,dir)=>{
     const code=Math.floor(Math.random()*200+1);
-    setPreds(ps=>[...ps,{id:Date.now(),ticker:asset.ticker,name:asset.name,icon:asset.icon,dir,price:prices[asset.ticker]||asset.basePrice,resolves:"May 25",status:"open",correct:null}]);
+    setPreds(ps=>[...ps,{id:Date.now(),ticker:asset.ticker,name:asset.name,icon:asset.icon,dir,price:prices[asset.ticker]||asset.basePrice,resolves:new Date(Date.now()+7*86400000).toLocaleDateString("en-GB",{day:"numeric",month:"short"}),status:"open",correct:null}]);
     setPredSel(null);setXp(x=>x+30);setCoins(c=>c+10);
   };
 
@@ -1538,13 +1632,17 @@ function KidDash({user,savedState,onLogout}){
     <div className="dash">
       {/* Order placed / filled toast */}
       {orderToast&&(
-        <div style={{position:"fixed",top:0,left:0,right:0,zIndex:320,padding:"12px 16px",background:(orderToast.type==="filled"||orderToast.type==="backfill")?"rgba(4,120,87,.96)":"rgba(124,58,237,.96)",color:"#fff",animation:"slideDown .4s ease",display:"flex",alignItems:"center",gap:10}} onClick={()=>setOrderToast(null)}>
-          <span style={{fontSize:22}}>{orderToast.type==="filled"?"✅":orderToast.type==="backfill"?"🎯":orderToast.type==="limit"?"🎯":"⏰"}</span>
+        <div style={{position:"fixed",top:0,left:0,right:0,zIndex:320,padding:"12px 16px",background:(orderToast.type==="filled"||orderToast.type==="backfill"||(orderToast.type==="pred"&&orderToast.wins>0))?"rgba(4,120,87,.96)":orderToast.type==="insufficient"?"rgba(180,83,9,.96)":"rgba(124,58,237,.96)",color:"#fff",animation:"slideDown .4s ease",display:"flex",alignItems:"center",gap:10}} onClick={()=>setOrderToast(null)}>
+          <span style={{fontSize:22}}>{orderToast.type==="filled"?"✅":orderToast.type==="backfill"?"🎯":orderToast.type==="limit"?"🎯":orderToast.type==="pred"?"🔮":orderToast.type==="insufficient"?"⏳":"⏰"}</span>
           <div style={{flex:1,fontSize:13,fontWeight:800,lineHeight:1.4}}>
             {orderToast.type==="filled"&&<>Order filled! {orderToast.side==="buy"?"Bought":"Sold"} {orderToast.name} at {fs$(orderToast.price)}{orderToast.count>1?` (+${orderToast.count-1} more)`:""} 🎉</>}
             {orderToast.type==="backfill"&&<>While you were away, {orderToast.name} hit your target! {orderToast.side==="buy"?"Bought":"Sold"} at {fs$(orderToast.price)}{orderToast.count>1?` (+${orderToast.count-1} more)`:""} 🎯🎉</>}
             {orderToast.type==="limit"&&<>Limit order placed! We'll {orderToast.side} {orderToast.name} when it hits {fs$(orderToast.price)}. Check ••• → Orders.</>}
             {orderToast.type==="queued"&&<>Order queued! {orderToast.name} will {orderToast.side} at next open ({orderToast.when}). Check ••• → Orders.</>}
+            {orderToast.type==="pred"&&(orderToast.wins>0
+              ?<>🔮 Your {orderToast.name} prediction came TRUE! +{50*orderToast.wins} XP, +{25*orderToast.wins} coins! 🎉</>
+              :<>🔮 Your {orderToast.name} prediction didn't land this time — markets are tricky! Try another one.</>)}
+            {orderToast.type==="insufficient"&&<>⏳ {orderToast.name} hit your target, but you don't have enough cash right now ({fs$(orderToast.needed)} needed). The order is still waiting — sell something or wait for coins!</>}
           </div>
           <span style={{fontSize:14,opacity:.6}}>✕</span>
         </div>
@@ -1709,6 +1807,32 @@ function KidDash({user,savedState,onLogout}){
                 </div>
               );
             })}
+
+            {/* Family Leaderboard — monthly winners! */}
+            {famBoard.length>1&&(
+              <>
+                <div style={{display:"flex",alignItems:"baseline",gap:8,margin:"14px 0 10px"}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>🏆 Family Leaderboard</div>
+                  <div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:".5px"}}>this month</div>
+                </div>
+                {famBoard.map((r,i)=>(
+                  <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",background:r.isMe?"rgba(255,255,255,.1)":"rgba(255,255,255,.05)",border:`1px solid ${i===0?"rgba(245,158,11,.45)":"rgba(255,255,255,.09)"}`,borderRadius:13,marginBottom:8}}>
+                    <div style={{fontFamily:"var(--fd)",fontSize:15,width:26,textAlign:"center",color:i===0?"#fbbf24":"rgba(255,255,255,.45)"}}>{i===0?"👑":`#${i+1}`}</div>
+                    <div style={{fontSize:24}}>{r.avatar||"🙂"}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:800,fontSize:13,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}{r.isMe?" (you)":""}</div>
+                      <div style={{fontSize:10,color:"rgba(255,255,255,.45)",fontWeight:600}}>{fs$(r.value)} portfolio</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      {r.gain!=null
+                        ?<div style={{fontWeight:900,fontSize:14,color:r.gain>=0?"#86efac":"#fca5a5"}}>{r.gain>=0?"▲":"▼"} {Math.abs(r.gain).toFixed(1)}%</div>
+                        :<div style={{fontWeight:800,fontSize:11,color:"rgba(255,255,255,.35)"}}>not played<br/>this month</div>}
+                    </div>
+                  </div>
+                ))}
+                <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,.35)",textAlign:"center",marginBottom:6}}>Best % gain this month wins the crown 👑 — resets on the 1st!</div>
+              </>
+            )}
 
             {/* Live market preview */}
             <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",margin:"14px 0 10px"}}>📊 Live Market</div>
@@ -2236,8 +2360,10 @@ function KidDash({user,savedState,onLogout}){
                     {predictions.map(p=>(
                       <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:13,marginBottom:8}}>
                         <span style={{fontSize:24}}>{p.icon}</span>
-                        <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{p.name}</div><div style={{fontSize:11,color:"rgba(255,255,255,.45)",fontWeight:600}}>Predicting {p.dir} · Resolves {p.resolves}</div></div>
-                        <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--fd)",fontSize:13,color:p.dir==="UP"?"#86efac":"#fca5a5"}}>{p.dir==="UP"?"📈 UP":"📉 DOWN"}</div><div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.4)"}}>Open</div></div>
+                        <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{p.name}</div><div style={{fontSize:11,color:"rgba(255,255,255,.45)",fontWeight:600}}>{p.status==="resolved"
+                          ?<>Predicted {p.dir} at {fs$(p.price)} · ended {fs$(p.resultPrice)}</>
+                          :<>Predicting {p.dir} · Resolves {new Date(p.id+7*86400000).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</>}</div></div>
+                        <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--fd)",fontSize:13,color:p.dir==="UP"?"#86efac":"#fca5a5"}}>{p.dir==="UP"?"📈 UP":"📉 DOWN"}</div><div style={{fontSize:11,fontWeight:800,color:p.status!=="resolved"?"rgba(255,255,255,.4)":p.correct?"#86efac":"#fca5a5"}}>{p.status!=="resolved"?"Open":p.correct?"✅ +25 🪙":"❌ Missed"}</div></div>
                       </div>
                     ))}
                   </div>

@@ -128,7 +128,69 @@ async function fetchCrypto(): Promise<Quotes & { source: string }> {
   return { prices, prev, source: Object.keys(prices).length ? "coinbase" : "none" };
 }
 
-export default async () => {
+// ── history: intraday candles for the order-backfill check ────────────
+// GET /prices?history=TICKER&since=MS → { candles: [{t, lo, hi}] }
+// Server-side fetch avoids the CORS/proxy flakiness the client used to hit.
+const histCache = new Map<string, { t: number; body: unknown }>();
+const HIST_CACHE_MS = 60_000;
+
+async function fetchHistory(ticker: string, since: number): Promise<{ candles: { t: number; lo: number; hi: number }[] }> {
+  const candles: { t: number; lo: number; hi: number }[] = [];
+  if (ticker === "BTC" || ticker === "ETH") {
+    const id = ticker === "BTC" ? "bitcoin" : "ethereum";
+    const days = Math.min(90, Math.max(1, Math.ceil((Date.now() - since) / 86_400_000)));
+    const r = await fetch(
+      `https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${days}`,
+      { signal: AbortSignal.timeout(7000) },
+    );
+    if (r.ok) {
+      const d: any = await r.json();
+      for (const p of d?.prices || []) {
+        if (p[0] >= since) candles.push({ t: p[0], lo: p[1], hi: p[1] });
+      }
+    }
+  } else if (STOCKS.includes(ticker)) {
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=5m&range=5d`,
+      { headers: { "user-agent": UA }, signal: AbortSignal.timeout(7000) },
+    );
+    if (r.ok) {
+      const d: any = await r.json();
+      const res = d?.chart?.result?.[0];
+      const ts: number[] = res?.timestamp || [];
+      const q = res?.indicators?.quote?.[0] || {};
+      for (let i = 0; i < ts.length; i++) {
+        const t = ts[i] * 1000;
+        if (t < since) continue;
+        const lo = q.low?.[i], hi = q.high?.[i];
+        if (lo != null && hi != null) candles.push({ t, lo, hi });
+      }
+    }
+  }
+  return { candles };
+}
+
+export default async (req: Request) => {
+  const url = new URL(req.url);
+  const histTicker = url.searchParams.get("history");
+  if (histTicker) {
+    const ticker = histTicker.toUpperCase();
+    const since = Number(url.searchParams.get("since")) || Date.now() - 86_400_000;
+    const cacheKey = ticker; // since varies little between calls; ticker-level cache is fine
+    const hit = histCache.get(cacheKey);
+    if (hit && Date.now() - hit.t < HIST_CACHE_MS) {
+      const cached = hit.body as { candles: { t: number }[] };
+      return json({ candles: cached.candles.filter((c) => c.t >= since) });
+    }
+    try {
+      const body = await fetchHistory(ticker, 0); // fetch full window, filter per-request
+      if (body.candles.length) histCache.set(cacheKey, { t: Date.now(), body });
+      return json({ candles: body.candles.filter((c) => c.t >= since) });
+    } catch {
+      return json({ candles: [] });
+    }
+  }
+
   if (cache.body && Date.now() - cache.t < CACHE_MS) return json(cache.body);
 
   const [stocks, crypto] = await Promise.all([fetchStocks(), fetchCrypto()]);
