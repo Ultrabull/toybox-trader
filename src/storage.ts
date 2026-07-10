@@ -39,6 +39,7 @@ type SyncApi = {
   createFamily: (email: string, password: string) => Promise<Result>;
   signIn: (email: string, password: string) => Promise<Result>;
   signOut: () => void;
+  notify: (text: string) => Promise<Result>;
 };
 
 declare global {
@@ -327,6 +328,26 @@ const sync: SyncApi = {
     ls.del(SPACE_LS_KEY);
     ls.del(EMAIL_LS_KEY);
     cloudOk = false;
+  },
+
+  // Best-effort Telegram notification. The server looks up the family's linked
+  // chat id and bot token; if either is missing it just returns not-connected.
+  async notify(text) {
+    const space = storedSpace();
+    if (!space) return { ok: false, error: "Sign in to enable alerts." };
+    if (!text || !text.trim()) return { ok: false, error: "Nothing to send." };
+    try {
+      const res = await fetch("/.netlify/functions/notify", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ space, text }),
+        keepalive: true,
+      });
+      const d = await res.json().catch(() => ({}));
+      return d?.ok ? { ok: true } : { ok: false, error: d?.error || "Telegram not set up yet." };
+    } catch {
+      return { ok: false, error: "Couldn't reach the server." };
+    }
   },
 };
 

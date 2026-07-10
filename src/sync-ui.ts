@@ -50,6 +50,12 @@ export function mountSyncUI() {
     #tbx-sync-panel .status.offline{background:rgba(148,163,184,.18);color:#cbd5e1}
     #tbx-sync-msg{font-size:12.5px;margin-top:12px;min-height:16px;line-height:1.5}
     #tbx-sync-close{margin-top:16px}
+    #tbx-sync-panel hr.sep{border:none;border-top:1px solid rgba(255,255,255,.1);margin:18px 0}
+    #tbx-sync-panel .lbl2{font-size:13px;font-weight:800;margin:0 0 4px}
+    #tbx-sync-panel .rowb{display:flex;gap:8px;margin-top:10px}
+    #tbx-sync-panel .rowb button{margin-top:0}
+    #tbx-tg-state{font-size:12px;font-weight:800;margin:10px 0 2px}
+    #tbx-tg-msg{font-size:12px;margin-top:8px;min-height:14px;line-height:1.5}
   `;
   document.head.appendChild(style);
 
@@ -84,8 +90,79 @@ export function mountSyncUI() {
         <p class="muted" style="margin-top:12px">Signed in as <strong>${escapeHtml(
           st.email || "",
         )}</strong>.<br/>Your kids' accounts sync automatically across every device you sign in on. The kids just open the app as usual.</p>
+
+        <hr class="sep" />
+        <div class="lbl2">🔔 Telegram alerts</div>
+        <p class="muted">Get a Telegram message when your kids trade or earn a badge. Paste your Telegram <strong>chat ID</strong> below (message <strong>@userinfobot</strong> on Telegram to get it).</p>
+        <div id="tbx-tg-state">Checking…</div>
+        <input id="tbx-tg-chat" type="text" inputmode="numeric" placeholder="e.g. 123456789" autocomplete="off" />
+        <div class="rowb">
+          <button class="act" id="tbx-tg-save" type="button">Connect</button>
+          <button class="ghost" id="tbx-tg-test" type="button">Send test</button>
+        </div>
+        <div id="tbx-tg-msg"></div>
+
+        <hr class="sep" />
         <button class="ghost" id="tbx-signout" type="button">Sign out on this device</button>
         <button class="ghost" id="tbx-sync-close" type="button">Close</button>`;
+
+      const chatInput = panel.querySelector<HTMLInputElement>("#tbx-tg-chat")!;
+      const tgState = panel.querySelector<HTMLElement>("#tbx-tg-state")!;
+      const tgMsg = panel.querySelector<HTMLElement>("#tbx-tg-msg")!;
+      const setMsg = (t: string, color: string) => {
+        tgMsg.style.color = color;
+        tgMsg.textContent = t;
+      };
+
+      // Load the currently linked chat id (if any).
+      window.storage?.get("toybox:telegram:chat").then((r) => {
+        const chat = (r?.value || "").trim();
+        if (chat) {
+          tgState.style.color = "#6ee7b7";
+          tgState.textContent = "✅ Connected";
+          chatInput.value = chat;
+        } else {
+          tgState.style.color = "rgba(255,255,255,.6)";
+          tgState.textContent = "Not connected yet.";
+        }
+      });
+
+      panel.querySelector<HTMLButtonElement>("#tbx-tg-save")!.onclick = async () => {
+        const id = chatInput.value.trim();
+        if (!/^-?\d{5,}$/.test(id)) {
+          setMsg("That doesn't look like a chat ID (it's a number). Message @userinfobot to get yours.", "#fca5a5");
+          return;
+        }
+        await window.storage?.set("toybox:telegram:chat", id);
+        tgState.style.color = "#6ee7b7";
+        tgState.textContent = "✅ Connected";
+        setMsg("Saved. Tap “Send test” to check it works.", "#6ee7b7");
+      };
+
+      panel.querySelector<HTMLButtonElement>("#tbx-tg-test")!.onclick = async () => {
+        const id = chatInput.value.trim();
+        if (id) await window.storage?.set("toybox:telegram:chat", id);
+        setMsg("Sending test…", "rgba(255,255,255,.75)");
+        // Give the cloud write a moment to land before the server reads it.
+        await new Promise((r) => setTimeout(r, 900));
+        const res = await sync.notify("🧸 Toybox Trader test alert — you're all set! ✅");
+        if (res.ok) setMsg("Sent! Check your Telegram. ✅", "#6ee7b7");
+        else setMsg(msgForError(res.error), "#fca5a5");
+      };
+
+      const disc = document.createElement("button");
+      disc.className = "ghost";
+      disc.textContent = "Disconnect Telegram";
+      disc.type = "button";
+      tgMsg.after(disc);
+      disc.onclick = async () => {
+        await window.storage?.delete("toybox:telegram:chat");
+        chatInput.value = "";
+        tgState.style.color = "rgba(255,255,255,.6)";
+        tgState.textContent = "Not connected yet.";
+        setMsg("Disconnected.", "rgba(255,255,255,.6)");
+      };
+
       panel.querySelector<HTMLButtonElement>("#tbx-signout")!.onclick = () => {
         sync.signOut();
         mode = "signin";
@@ -159,6 +236,21 @@ export function mountSyncUI() {
   ov.addEventListener("click", (e) => {
     if (e.target === ov) close();
   });
+}
+
+function msgForError(error?: string): string {
+  switch (error) {
+    case "not-connected":
+      return "Saved, but no chat is linked yet — tap Connect first, then test.";
+    case "telegram-not-configured":
+      return "The bot isn't set up on the server yet. Add TELEGRAM_BOT_TOKEN in Netlify (see setup steps).";
+    case "no-database":
+      return "Cloud storage isn't connected. Set up Neon first.";
+    case "Sign in to enable alerts.":
+      return "Sign in to your family first.";
+    default:
+      return error || "Couldn't send. Double-check the chat ID and that you've messaged your bot once.";
+  }
 }
 
 function escapeHtml(s: string): string {

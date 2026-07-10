@@ -1048,6 +1048,7 @@ function KidDash({user,savedState,onLogout}){
         setNewBadge(b);
         fx("reward",30);
         setTimeout(()=>setNewBadge(null),3200);
+        try { window.toyboxSync?.notify?.(`🏆 ${user?.name||"Your child"} earned the "${b.name}" badge ${b.icon}`); } catch(e) {}
       }
     });
   },[trades,doneLesson,portfolio,totalValue,streak,invCards,predictions,xp,hydrated]);
@@ -1166,6 +1167,12 @@ function KidDash({user,savedState,onLogout}){
       setTrades(ts=>[{id:Date.now()+Math.random(),date:dateStr,time:timeStr,ticker,name,icon,side:"SELL",qty,price,total,pnl:realised,pnlPct:realisedPct.toFixed(1)},...ts]);
     }
     setXp(x=>x+50); setCoins(c=>c+10);
+    // Best-effort parent alert via Telegram (never blocks the trade)
+    try {
+      const verb = side==="buy" ? "🟢 bought" : "🔴 sold";
+      const qtyLabel = type==="crypto" ? `${qty} ${name}` : `${qty} ${name} ${qty===1?"share":"shares"}`;
+      window.toyboxSync?.notify?.(`${user?.name||"Your child"} ${verb} ${qtyLabel} at ${fs$(price)} (${fs$(total)}).`);
+    } catch(e) {}
   };
 
   const execTrade=()=>{
