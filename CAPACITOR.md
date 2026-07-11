@@ -30,13 +30,22 @@ npx cap open android     # opens Android Studio → Run
 ```
 
 ## App icons & splash screen
-The teddy icon lives in `public/icons/`. Generate native icons/splash from it:
+The polished source art is already in **`resources/`**:
+- `resources/icon.png` — 1024×1024 teddy app icon (safe-zoned for Android adaptive icons)
+- `resources/splash.png` / `resources/splash-dark.png` — 2732×2732 splash screens
+
+Generate every native density (icons + splash, for both iOS and Android) with one
+command — run it after the platforms exist (`cap add`), on a machine with normal
+network access (the tool pulls the `sharp` image library):
 ```bash
 npm install --save-dev @capacitor/assets
-npx capacitor-assets generate --iconBackgroundColor '#7c3aed' --splashBackgroundColor '#0d0621'
+npx @capacitor/assets generate --iconBackgroundColor '#7c3aed' --iconBackgroundColorDark '#7c3aed' --splashBackgroundColor '#0d0621' --splashBackgroundColorDark '#0d0621'
 ```
-(Point it at a 1024×1024 source icon for best results — export one from
-`public/icons/icon-512.png` scaled up, or supply a hi-res teddy.)
+This writes all the mipmap/adaptive icons and splash drawables into `android/`
+(and `ios/` if present). Then `npx cap sync` and build.
+
+> Note: this couldn't be pre-generated in the build environment because `sharp`'s
+> binary download was blocked there — it installs fine on a normal machine.
 
 ## Submitting
 1. **iOS:** in Xcode set your Team/signing + bundle id (`com.toyboxtrader.app`),
