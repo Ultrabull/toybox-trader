@@ -40,6 +40,7 @@ type SyncApi = {
   signIn: (email: string, password: string) => Promise<Result>;
   signOut: () => void;
   notify: (text: string) => Promise<Result>;
+  deleteAccount: () => Promise<Result>;
 };
 
 declare global {
@@ -348,6 +349,32 @@ const sync: SyncApi = {
     } catch {
       return { ok: false, error: "Couldn't reach the server." };
     }
+  },
+
+  // Permanently delete the whole family's data from the cloud, then wipe this
+  // device. Proceeds with the local wipe even if the server call fails.
+  async deleteAccount() {
+    const space = storedSpace();
+    if (space) {
+      try {
+        await fetch("/.netlify/functions/delete-account", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ space }),
+        });
+      } catch {
+        /* still wipe locally */
+      }
+    }
+    try {
+      for (const k of localAppKeys()) ls.del(k);
+      ls.del(SPACE_LS_KEY);
+      ls.del(EMAIL_LS_KEY);
+    } catch {
+      /* ignore */
+    }
+    cloudOk = false;
+    return { ok: true };
   },
 };
 

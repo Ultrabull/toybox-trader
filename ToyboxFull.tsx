@@ -706,13 +706,13 @@ export default function ToyboxApp() {
       <div className="app" style={{background:bg}}>
         <Stars/>
         {screen==="welcome"          && <Welcome      onNext={()=>setScreen("role_select")}/>}
-        {screen==="role_select"      && <RoleSelect   onKid={()=>setScreen("kid_profiles")} onParent={()=>enterTwoFA("parent_login")} onBack={()=>setScreen("welcome")}/>}
+        {screen==="role_select"      && <RoleSelect   onKid={()=>setScreen("kid_profiles")} onParent={()=>setScreen("parent_login")} onBack={()=>setScreen("welcome")}/>}
         {screen==="kid_profiles"     && <KidProfiles  kids={kids} onSelect={k=>{setLoginKid(k);setScreen("kid_pin");}} onNew={()=>setScreen("kid_reg")} onBack={()=>setScreen("role_select")} onRestore={onRestore}/>}
         {screen==="kid_reg"          && <KidRegister  regData={regData} setRegData={setRegData} onComplete={d=>{setRegData(d);enterTwoFA("kid_reg_2fa");}} onBack={()=>setScreen("kid_profiles")} setBgTheme={setBgTheme}/>}
         {screen==="kid_reg_2fa"      && <TwoFA        email={regData.email} code={twoFACode} who={regData.name} isReg onVerified={()=>onKidReg(regData)} onBack={()=>setScreen("kid_reg")}/>}
         {screen==="kid_pin"          && <PinScreen    kid={loginKid} onVerified={()=>enterTwoFA("kid_login_2fa")} onBack={()=>setScreen("kid_profiles")}/>}
         {screen==="kid_login_2fa"    && <TwoFA        email={loginKid?.email} code={twoFACode} who={loginKid?.name} onVerified={()=>onKidLogin(loginKid)} onBack={()=>setScreen("kid_pin")}/>}
-        {screen==="parent_login"     && <ParentLogin  code={twoFACode} onVerified={()=>setScreen("parent_dash")} onBack={()=>setScreen("role_select")}/>}
+        {screen==="parent_login"     && <ParentLogin  onVerified={()=>setScreen("parent_dash")} onBack={()=>setScreen("role_select")}/>}
         {screen==="celebrate"        && <Celebrate    user={authUser}/>}
         {screen==="kid_dash"         && <KidDash      user={authUser} savedState={savedState} onLogout={()=>{setAuthUser(null);setScreen("welcome");}}/>}
         {screen==="parent_dash"      && <ParentDash   kids={kids} onResetKid={onResetKid} onLogout={()=>setScreen("welcome")}/>}
@@ -735,6 +735,9 @@ function Welcome({onNext}){
           {["📈 Real skills","🎮 Game fun","🏆 Monthly winners","🔐 Super secure"].map(t=><div key={t} style={{fontSize:11,fontWeight:800,background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",padding:"4px 10px",borderRadius:100}}>{t}</div>)}
         </div>
         <button className="btn btn-w" onClick={onNext}>Get Started 🚀</button>
+        <div style={{marginTop:14,fontSize:11,fontWeight:600,color:"rgba(255,255,255,.4)"}}>
+          Play money only — no real trades. <a href="/privacy.html" target="_blank" rel="noopener" style={{color:"rgba(167,139,250,.9)"}}>Privacy Policy</a>
+        </div>
       </div>
     </div>
   );
@@ -893,20 +896,23 @@ function TwoFA({email,code,who,isReg,onVerified,onBack}){
   );
 }
 
-function ParentLogin({code,onVerified,onBack}){
-  const [step,setStep]=useState(0);const [email,setEmail]=useState("");const [pin,setPin]=useState("");
-  if(step===1)return <TwoFA email={email} code={code} who="Parent" onVerified={onVerified} onBack={()=>setStep(0)}/>;
-  const tap=d=>{if(pin.length>=4)return;const n=pin+d;setPin(n);if(n.length===4){if(!email.includes("@")){setPin("");return;}setStep(1);}};
-  const DIGITS=["1","2","3","4","5","6","7","8","9","","0","⌫"];
+// Real parental gate (App Store / Play Store requirement): a multiplication
+// challenge a young child shouldn't be able to pass, guarding the parent area.
+function ParentLogin({onVerified,onBack}){
+  const [a]=useState(()=>6+Math.floor(Math.random()*4));   // 6..9
+  const [b]=useState(()=>7+Math.floor(Math.random()*3));   // 7..9
+  const [ans,setAns]=useState("");const [err,setErr]=useState(false);
+  const check=()=>{ if(parseInt(ans,10)===a*b){ setErr(false); onVerified(); } else { setErr(true); } };
   return(
     <div className="page">
       <div className="card" style={{textAlign:"center"}}>
-        <div style={{fontSize:42,marginBottom:8}}>👔</div>
-        <div className="ttl">Parent Login</div>
-        <div className="sub">Email then 4-digit PIN</div>
-        <input className="inp" type="email" placeholder="your@email.com" value={email} onChange={e=>{setEmail(e.target.value);setPin("");}} style={{textAlign:"left",marginBottom:14}}/>
-        {email.includes("@")&&(<><div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.4)",marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>Enter PIN</div><div className="pin-dots">{[0,1,2,3].map(i=><div key={i} className={`pin-dot ${i<pin.length?"filled":""}`}/>)}</div><div className="pin-grid">{DIGITS.map((d,i)=>d===""?<div key={i}/>:<button key={i} className={`pin-btn ${d==="⌫"?"del":""}`} onClick={()=>d==="⌫"?setPin(p=>p.slice(0,-1)):tap(d)}>{d}</button>)}</div></>)}
-        <div style={{fontSize:11,color:"rgba(255,255,255,.3)",fontWeight:600,marginTop:10}}>Demo: any email + any 4-digit PIN</div>
+        <div style={{fontSize:42,marginBottom:8}}>🔒</div>
+        <div className="ttl">Grown-ups only</div>
+        <div className="sub">Ask a parent to unlock this area</div>
+        <div style={{fontFamily:"var(--fd)",fontSize:24,color:"#fff",margin:"18px 0 12px"}}>What is {a} × {b}?</div>
+        <input className="inp" inputMode="numeric" placeholder="Type the answer" value={ans} onChange={e=>{setAns(e.target.value.replace(/\D/g,""));setErr(false);}} onKeyDown={e=>e.key==="Enter"&&check()} style={{textAlign:"center"}}/>
+        {err&&<div className="pin-err">❌ Not quite — ask a grown-up and try again</div>}
+        <button className="btn btn-w" onClick={check} style={{marginTop:12}}>Unlock 🔓</button>
         <button className="btn-link" onClick={onBack}>← Back</button>
       </div>
     </div>

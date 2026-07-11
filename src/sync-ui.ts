@@ -104,7 +104,53 @@ export function mountSyncUI() {
 
         <hr class="sep" />
         <button class="ghost" id="tbx-signout" type="button">Sign out on this device</button>
+        <button class="ghost" id="tbx-del-open" type="button" style="color:#fca5a5;border-color:rgba(239,68,68,.35)">Delete account &amp; all data</button>
+        <div id="tbx-del-box"></div>
         <button class="ghost" id="tbx-sync-close" type="button">Close</button>`;
+
+      // ── Account deletion (behind a parental gate) ──
+      const delBox = panel.querySelector<HTMLElement>("#tbx-del-box")!;
+      panel.querySelector<HTMLButtonElement>("#tbx-del-open")!.onclick = () => {
+        if (delBox.dataset.open) {
+          delBox.dataset.open = "";
+          delBox.innerHTML = "";
+          return;
+        }
+        delBox.dataset.open = "1";
+        // Simple math parental gate — a young child shouldn't pass it.
+        const a = 6 + Math.floor((Date.now() / 1000) % 4); // 6..9, varies
+        const b = 7 + Math.floor((Date.now() / 700) % 3); // 7..9, varies
+        delBox.innerHTML = `
+          <div style="border:1px solid rgba(239,68,68,.35);border-radius:12px;padding:14px;margin-top:10px;text-align:left">
+            <div style="font-size:12.5px;color:#fca5a5;font-weight:800;margin-bottom:6px">⚠️ This permanently deletes ALL your kids' accounts and progress on every device. It can't be undone.</div>
+            <div style="font-size:12px;color:rgba(255,255,255,.6);margin-bottom:10px">Grown-up check: what is <strong>${a} × ${b}</strong>? Then type <strong>DELETE</strong> to confirm.</div>
+            <input id="tbx-del-math" inputmode="numeric" placeholder="Answer to ${a} × ${b}" style="width:100%;margin-bottom:8px" />
+            <input id="tbx-del-word" placeholder="Type DELETE" autocomplete="off" style="width:100%;margin-bottom:10px" />
+            <button class="ghost" id="tbx-del-go" type="button" style="color:#fff;background:linear-gradient(135deg,#ef4444,#dc2626);border:none">Permanently delete everything</button>
+            <div id="tbx-del-msg" style="font-size:12px;margin-top:8px;min-height:14px"></div>
+          </div>`;
+        const mathIn = delBox.querySelector<HTMLInputElement>("#tbx-del-math")!;
+        const wordIn = delBox.querySelector<HTMLInputElement>("#tbx-del-word")!;
+        const delMsg = delBox.querySelector<HTMLElement>("#tbx-del-msg")!;
+        delBox.querySelector<HTMLButtonElement>("#tbx-del-go")!.onclick = async () => {
+          if (parseInt(mathIn.value, 10) !== a * b) {
+            delMsg.style.color = "#fca5a5";
+            delMsg.textContent = "That math answer isn't right — ask a grown-up.";
+            return;
+          }
+          if (wordIn.value.trim().toUpperCase() !== "DELETE") {
+            delMsg.style.color = "#fca5a5";
+            delMsg.textContent = 'Please type DELETE to confirm.';
+            return;
+          }
+          delMsg.style.color = "rgba(255,255,255,.75)";
+          delMsg.textContent = "Deleting everything…";
+          await sync.deleteAccount();
+          delMsg.style.color = "#6ee7b7";
+          delMsg.textContent = "Deleted. Reloading…";
+          setTimeout(() => location.reload(), 900);
+        };
+      };
 
       const chatInput = panel.querySelector<HTMLInputElement>("#tbx-tg-chat")!;
       const tgState = panel.querySelector<HTMLElement>("#tbx-tg-state")!;
