@@ -20,6 +20,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to publish the APK to a GitHub Release
     # Secrets are surfaced as env vars so they can be checked in `if:` conditions
     # (secrets can't be referenced directly in `if:`). Release steps run only
     # when the keystore secret is set.
@@ -55,12 +57,30 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload debug APK
+      - name: Upload debug APK (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: toybox-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # ── Tap-to-install: attach the APK to a Release so you can install it
+      #    directly from your phone browser (no unzipping). Always the latest.
+      - name: Rename APK for the Release
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk toybox-trader-test.apk
+
+      - name: Publish APK to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: "📱 Toybox Trader — latest Android test build"
+          body: |
+            Tap **toybox-trader-test.apk** below to install the latest test build
+            on your Android phone. You may need to allow "install from this source".
+
+            This is a test build (debug). Built from commit ${{ github.sha }}.
+          prerelease: true
+          files: toybox-trader-test.apk
 
       # ── Signed release AAB — built only when the signing secrets are set.
       #    Upload this file to the Google Play Console.

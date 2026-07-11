@@ -5,14 +5,23 @@ GitHub app or website on your phone.
 
 ## A. Test the app on your phone now (no setup, no fees)
 
-1. Open the repo on GitHub → **Actions** tab.
+Easiest way — tap-to-install from a Release:
+
+1. In your phone browser, open **github.com** → your repo → **Actions** tab.
 2. Choose **"Build Android app"** → **Run workflow** → run it on `main`.
 3. Wait ~5–10 min for the green check.
-4. Open the finished run → scroll to **Artifacts** → download **`toybox-debug-apk`**.
-5. Unzip and tap **`app-debug.apk`** to install it (Android will ask you to allow
-   installing from this source — that's normal for a test build).
+4. Go to the repo's **Releases** (right-hand side / repo home) → open
+   **"Toybox Trader — latest Android test build"**.
+5. Tap **`toybox-trader-test.apk`** → it downloads → tap it to install.
+   (Android will ask you to allow installing from this source — normal for a
+   test build.)
 
-That's the real native app running on your phone. 🎉
+That's the real native app running on your phone. 🎉 Every time you re-run the
+build, that same Release updates with the newest APK.
+
+> Tip: the GitHub **mobile app** is handy for watching the build and getting a
+> notification when it finishes, but use the **browser** for "Run workflow" and
+> for downloading the APK.
 
 ## B. Publish to the Google Play Store (when ready)
 
