@@ -140,7 +140,7 @@ const LESSONS = [
    ],},
   {id:"when_buy",icon:"🛍️",title:"When to Buy?",color:"#10b981",cashReward:75,island:"Sale Island",
    slides:[
-    {icon:"🛍️",title:"Buying on sale",body:"Your favourite game is $60. On sale for $40. You'd buy it immediately! Smart investors do the same — a temporary dip on a GOOD company is a SALE!",example:"💡 Apple drops to $170 for one slow week. Smart investors buy knowing it'll recover!"},
+    {icon:"🛍️",title:"Buying on sale",body:"Your favorite game is $60. On sale for $40. You'd buy it immediately! Smart investors do the same — a temporary dip on a GOOD company is a SALE!",example:"💡 Apple drops to $170 for one slow week. Smart investors buy knowing it'll recover!"},
     {icon:"🧺",title:"Never put all eggs in one basket",body:"10 Easter eggs in one basket. Dog knocks it over — you lose ALL 10. But 5 baskets with 2 eggs each? Dog only gets 2!",example:"💡 Own 4-5 different assets. If one crashes, others protect you. This is called diversification!"},
   ],
    quiz:[
@@ -221,12 +221,12 @@ const LESSONS = [
 
   {id:"buy_hold",icon:"💎",title:"Buy and Hold",color:"#8b5cf6",cashReward:125,island:"Diamond Isle",
    slides:[
-    {icon:"💎",title:"Diamond hands win",body:"Buy and Hold means you buy a GREAT company and keep it for years — through ups AND downs. You don't panic-sell on a bad week. This is Warren Buffett's whole secret!",example:"💡 Buffett's rule: 'My favourite holding period is forever.' He's one of the richest people alive from doing exactly this."},
+    {icon:"💎",title:"Diamond hands win",body:"Buy and Hold means you buy a GREAT company and keep it for years — through ups AND downs. You don't panic-sell on a bad week. This is Warren Buffett's whole secret!",example:"💡 Buffett's rule: 'My favorite holding period is forever.' He's one of the richest people alive from doing exactly this."},
     {icon:"🐢",title:"The tortoise beats the hare",body:"Studies show people who trade a LOT usually do WORSE than people who buy good companies and do nothing. Every time you trade you risk a mistake. Patience is a superpower.",example:"💡 $1,000 in Apple in 2003, left alone, became over $400,000. The kids who did NOTHING won the most!"},
     {icon:"🌳",title:"Let it grow",body:"A tree doesn't grow if you keep digging it up to check the roots. Investments are the same — give good companies TIME. The longer you hold quality, the more powerful compound growth becomes.",example:"💡 The boring strategy of 'buy good stuff, wait 10 years' beats almost every fancy trading robot."},
   ],
    quiz:[
-    {q:"What is Warren Buffett's famous holding period?",opts:["One day","One week","Forever","One hour"],correct:2,why:"'My favourite holding period is forever' — he buys great companies and holds for decades!"},
+    {q:"What is Warren Buffett's famous holding period?",opts:["One day","One week","Forever","One hour"],correct:2,why:"'My favorite holding period is forever' — he buys great companies and holds for decades!"},
     {q:"Studies show people who trade a LOT usually...",opts:["Get rich fast","Do WORSE than patient holders","Always win","Never make mistakes"],correct:1,why:"Frequent trading usually loses to patient buy-and-hold. Every trade is a chance to slip up!"},
    ],},
 
@@ -664,7 +664,7 @@ export default function ToyboxApp() {
 
   const enterTwoFA = to => { setTwoFACode(genCode()); setScreen(to); };
   const onKidReg   = data => {
-    const k = {id:Date.now().toString(),name:data.name,avatar:data.avatar,age:data.age,email:data.email,pin:data.pin,theme:data.theme||"space",cash:1000,coins:50,xp:0,streak:0,joinedAt:new Date().toLocaleDateString("en-GB")};
+    const k = {id:Date.now().toString(),name:data.name,avatar:data.avatar,age:data.age,email:data.email,pin:data.pin,theme:data.theme||"space",cash:1000,coins:50,xp:0,streak:0,joinedAt:new Date().toLocaleDateString("en-US")};
     setKids(ks=>[...ks,k]); setAuthUser(k); setSavedState(null); setScreen("celebrate");
     setTimeout(()=>setScreen("kid_dash"),3000);
   };
@@ -1019,10 +1019,10 @@ function KidDash({user,savedState,onLogout}){
   const totalValue = portVal+cash;
   const startingCash = 1000 + doneLesson.reduce((s,id)=>s+(LESSONS.find(l=>l.id===id)?.cashReward||0),0);
   const allTimeGain   = totalValue - 1000;
-  // Realised P&L = sum of profit/loss from completed sells
-  const realisedPnl = trades.filter(t=>t.side==="SELL"&&t.pnl!=null).reduce((s,t)=>s+t.pnl,0);
-  // Unrealised P&L = current holdings vs what was paid
-  const unrealisedPnl = portfolio.reduce((s,h)=>s+((prices[h.ticker]||h.avgCost)-h.avgCost)*h.qty,0);
+  // Realized P&L = sum of profit/loss from completed sells
+  const realizedPnl = trades.filter(t=>t.side==="SELL"&&t.pnl!=null).reduce((s,t)=>s+t.pnl,0);
+  // Unrealized P&L = current holdings vs what was paid
+  const unrealizedPnl = portfolio.reduce((s,h)=>s+((prices[h.ticker]||h.avgCost)-h.avgCost)*h.qty,0);
   // Since last visit
   const sinceLastVisit = lastValue!=null ? totalValue - lastValue : null;
 
@@ -1253,7 +1253,7 @@ function KidDash({user,savedState,onLogout}){
     const total = price*qty;
     const heldPos = portfolio.find(p=>p.ticker===ticker);
     const now=new Date();
-    const dateStr=now.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+    const dateStr=now.toLocaleDateString("en-US",{day:"numeric",month:"short"});
     const timeStr=now.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
     if(side==="buy"){
       if(heldPos) setPort(prev=>prev.map(p=>p.ticker===ticker?{...p,qty:p.qty+qty,avgCost:(p.avgCost*p.qty+price*qty)/(p.qty+qty)}:p));
@@ -1262,11 +1262,11 @@ function KidDash({user,savedState,onLogout}){
       setInvCards(cs=>[...cs,{id:Date.now()+Math.random(),ticker,name,icon,color,buyPrice:price,qty,earnedAt:dateStr,tier:"⬜ Common"}]);
       setTrades(ts=>[{id:Date.now()+Math.random(),date:dateStr,time:timeStr,ticker,name,icon,side:"BUY",qty,price,total,pnl:null},...ts]);
     } else {
-      const realised = (price-(heldPos?.avgCost||price))*qty;
-      const realisedPct = heldPos?.avgCost ? ((price-heldPos.avgCost)/heldPos.avgCost*100) : 0;
+      const realized = (price-(heldPos?.avgCost||price))*qty;
+      const realizedPct = heldPos?.avgCost ? ((price-heldPos.avgCost)/heldPos.avgCost*100) : 0;
       setPort(prev=>prev.map(p=>p.ticker===ticker?{...p,qty:+(p.qty-qty).toFixed(6)}:p).filter(p=>p.qty>0.000001));
       setCash(c=>c+total);
-      setTrades(ts=>[{id:Date.now()+Math.random(),date:dateStr,time:timeStr,ticker,name,icon,side:"SELL",qty,price,total,pnl:realised,pnlPct:realisedPct.toFixed(1)},...ts]);
+      setTrades(ts=>[{id:Date.now()+Math.random(),date:dateStr,time:timeStr,ticker,name,icon,side:"SELL",qty,price,total,pnl:realized,pnlPct:realizedPct.toFixed(1)},...ts]);
     }
     setXp(x=>x+50); setCoins(c=>c+10);
     // Best-effort parent alert via Telegram (never blocks the trade)
@@ -1296,7 +1296,7 @@ function KidDash({user,savedState,onLogout}){
 
     // CASE 1: Limit order → always queue (waits for target price)
     if(orderType==="limit"){
-      setPending(o=>[{...base,id:Date.now(),kind:"limit",limitPrice:+limitPrice,placedAt:Date.now(),placed:new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short"})},...o]);
+      setPending(o=>[{...base,id:Date.now(),kind:"limit",limitPrice:+limitPrice,placedAt:Date.now(),placed:new Date().toLocaleDateString("en-US",{day:"numeric",month:"short"})},...o]);
       setOrderToast({type:"limit",name:tradeAsset.name,side:tradeMode,price:limitPrice});
       spendToken();
       fx("tap",12); setTradeAsset(null);
@@ -1306,7 +1306,7 @@ function KidDash({user,savedState,onLogout}){
 
     // CASE 2: Market order on a CLOSED stock market → queue for next open
     if(!isCrypto && !mkt.open){
-      setPending(o=>[{...base,id:Date.now(),kind:"queued",placedAt:Date.now(),placed:new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short"})},...o]);
+      setPending(o=>[{...base,id:Date.now(),kind:"queued",placedAt:Date.now(),placed:new Date().toLocaleDateString("en-US",{day:"numeric",month:"short"})},...o]);
       setOrderToast({type:"queued",name:tradeAsset.name,side:tradeMode,when:mkt.nextOpenText});
       spendToken();
       fx("tap",12); setTradeAsset(null);
@@ -1548,7 +1548,7 @@ function KidDash({user,savedState,onLogout}){
   // Grant a rare collectible card (used by the daily bonus + spin wheel).
   const grantRareCard = () => {
     const a = MARKET[Math.floor(Math.random()*MARKET.length)];
-    setInvCards(cs=>[...cs,{id:Date.now()+Math.random(),ticker:a.ticker,name:a.name,icon:a.icon,color:a.color,buyPrice:prices[a.ticker]||a.basePrice,qty:0,earnedAt:new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short"}),tier:"✨ Rare"}]);
+    setInvCards(cs=>[...cs,{id:Date.now()+Math.random(),ticker:a.ticker,name:a.name,icon:a.icon,color:a.color,buyPrice:prices[a.ticker]||a.basePrice,qty:0,earnedAt:new Date().toLocaleDateString("en-US",{day:"numeric",month:"short"}),tier:"✨ Rare"}]);
   };
 
   const completeLesson = id => {
@@ -1619,12 +1619,12 @@ function KidDash({user,savedState,onLogout}){
   };
 
   const startChallenge=sib=>{
-    setChallenge({sib,myGain:allTimeGain,sibGain:sib.portPnl,started:new Date().toLocaleDateString("en-GB"),ends:"May 25"});
+    setChallenge({sib,myGain:allTimeGain,sibGain:sib.portPnl,started:new Date().toLocaleDateString("en-US"),ends:new Date(Date.now()+7*86400000).toLocaleDateString("en-US",{day:"numeric",month:"short"})});
   };
 
   const makePred=(asset,dir)=>{
     const code=Math.floor(Math.random()*200+1);
-    setPreds(ps=>[...ps,{id:Date.now(),ticker:asset.ticker,name:asset.name,icon:asset.icon,dir,price:prices[asset.ticker]||asset.basePrice,resolves:new Date(Date.now()+7*86400000).toLocaleDateString("en-GB",{day:"numeric",month:"short"}),status:"open",correct:null}]);
+    setPreds(ps=>[...ps,{id:Date.now(),ticker:asset.ticker,name:asset.name,icon:asset.icon,dir,price:prices[asset.ticker]||asset.basePrice,resolves:new Date(Date.now()+7*86400000).toLocaleDateString("en-US",{day:"numeric",month:"short"}),status:"open",correct:null}]);
     setPredSel(null);setXp(x=>x+30);setCoins(c=>c+10);
   };
 
@@ -2225,22 +2225,22 @@ function KidDash({user,savedState,onLogout}){
                   )}
                 </div>
 
-                {/* Realised vs Unrealised */}
+                {/* Realized vs Unrealized */}
                 <div style={{display:"flex",gap:10,marginBottom:14}}>
                   <div style={{flex:1,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,padding:14}}>
-                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:3}}>💰 Realised P&amp;L</div>
-                    <div style={{fontFamily:"var(--fd)",fontSize:20,color:realisedPnl>=0?"#86efac":"#fca5a5"}}>{realisedPnl>=0?"+":""}{f$(realisedPnl)}</div>
+                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:3}}>💰 Realized P&amp;L</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:20,color:realizedPnl>=0?"#86efac":"#fca5a5"}}>{realizedPnl>=0?"+":""}{f$(realizedPnl)}</div>
                     <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,.4)",marginTop:2}}>From completed sells</div>
                   </div>
                   <div style={{flex:1,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,padding:14}}>
-                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:3}}>📊 Unrealised P&amp;L</div>
-                    <div style={{fontFamily:"var(--fd)",fontSize:20,color:unrealisedPnl>=0?"#86efac":"#fca5a5"}}>{unrealisedPnl>=0?"+":""}{f$(unrealisedPnl)}</div>
+                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:3}}>📊 Unrealized P&amp;L</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:20,color:unrealizedPnl>=0?"#86efac":"#fca5a5"}}>{unrealizedPnl>=0?"+":""}{f$(unrealizedPnl)}</div>
                     <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,.4)",marginTop:2}}>On what you still hold</div>
                   </div>
                 </div>
 
                 <div style={{background:"rgba(6,182,212,.08)",border:"1px solid rgba(6,182,212,.2)",borderRadius:12,padding:12,marginBottom:14,fontSize:11,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.5}}>
-                  💡 <strong style={{color:"#67e8f9"}}>Realised</strong> = profit you've locked in by selling. <strong style={{color:"#67e8f9"}}>Unrealised</strong> = paper profit on stuff you still own — it changes as prices move!
+                  💡 <strong style={{color:"#67e8f9"}}>Realized</strong> = profit you've locked in by selling. <strong style={{color:"#67e8f9"}}>Unrealized</strong> = paper profit on stuff you still own — it changes as prices move!
                 </div>
 
                 {/* Trade history log */}
@@ -2410,7 +2410,7 @@ function KidDash({user,savedState,onLogout}){
                         <span style={{fontSize:24}}>{p.icon}</span>
                         <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{p.name}</div><div style={{fontSize:11,color:"rgba(255,255,255,.45)",fontWeight:600}}>{p.status==="resolved"
                           ?<>Predicted {p.dir} at {fs$(p.price)} · ended {fs$(p.resultPrice)}</>
-                          :<>Predicting {p.dir} · Resolves {new Date(p.id+7*86400000).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</>}</div></div>
+                          :<>Predicting {p.dir} · Resolves {new Date(p.id+7*86400000).toLocaleDateString("en-US",{day:"numeric",month:"short"})}</>}</div></div>
                         <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--fd)",fontSize:13,color:p.dir==="UP"?"#86efac":"#fca5a5"}}>{p.dir==="UP"?"📈 UP":"📉 DOWN"}</div><div style={{fontSize:11,fontWeight:800,color:p.status!=="resolved"?"rgba(255,255,255,.4)":p.correct?"#86efac":"#fca5a5"}}>{p.status!=="resolved"?"Open":p.correct?"✅ +25 🪙":"❌ Missed"}</div></div>
                       </div>
                     ))}
@@ -2650,7 +2650,7 @@ function KidDash({user,savedState,onLogout}){
             <div style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,.65)",textAlign:"center",lineHeight:1.6,marginBottom:16}}>It's how you trade even when you're at school! 🎒</div>
             {[
               {ic:"🎒",t:"The problem",d:"The US stock market is only open while you're in class (about 2:30pm–9pm UK time). You can't watch prices all day!"},
-              {ic:"📝",t:"The clever trick",d:"A limit order is like leaving a note with a friend: 'If my favourite trainers drop to £40, buy them for me!' You set your price and walk away."},
+              {ic:"📝",t:"The clever trick",d:"A limit order is like leaving a note with a friend: 'If my favorite sneakers drop to $40, buy them for me!' You set your price and walk away."},
               {ic:"🟢",t:"Buy limit = wait for a sale",d:"Apple is $195? Set a buy limit at $180. If it ever dips to $180 — even at 3am — the app buys it for you automatically. You never overpay!"},
               {ic:"🔴",t:"Sell limit = lock in profit",d:"Own Roblox at $50 and want to take profit at $60? Set a sell limit at $60. The moment it hits, the app sells and banks your gain — even while you sleep."},
               {ic:"⏳",t:"Check your orders anytime",d:"All your waiting orders live in ••• → Orders. You can see which are ready, and cancel any you change your mind about."},
@@ -2985,7 +2985,7 @@ function ParentDash({kids,onResetKid,onLogout}){
             const st=kidStates[k.id];
             const total=kidTotal(k);
             const gain=kidGain(k);
-            const realised=st?.trades?.filter(t=>t.side==="SELL"&&t.pnl!=null).reduce((s,t)=>s+t.pnl,0)||0;
+            const realized=st?.trades?.filter(t=>t.side==="SELL"&&t.pnl!=null).reduce((s,t)=>s+t.pnl,0)||0;
             const tradeCount=st?.trades?.length||0;
             const lessonsDone=st?.doneLesson?.length||0;
             return(
@@ -3001,9 +3001,9 @@ function ParentDash({kids,onResetKid,onLogout}){
                     <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase"}}>All-time</div>
                     <div style={{fontFamily:"var(--fd)",fontSize:15,color:gain>=0?"#86efac":"#fca5a5"}}>{gain>=0?"+":""}{f$(gain)}</div>
                   </div>
-                  <div style={{flex:1,background:realised>=0?"rgba(16,185,129,.1)":"rgba(239,68,68,.1)",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
-                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase"}}>Realised</div>
-                    <div style={{fontFamily:"var(--fd)",fontSize:15,color:realised>=0?"#86efac":"#fca5a5"}}>{realised>=0?"+":""}{f$(realised)}</div>
+                  <div style={{flex:1,background:realized>=0?"rgba(16,185,129,.1)":"rgba(239,68,68,.1)",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
+                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase"}}>Realized</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:15,color:realized>=0?"#86efac":"#fca5a5"}}>{realized>=0?"+":""}{f$(realized)}</div>
                   </div>
                   <div style={{flex:1,background:"rgba(255,255,255,.06)",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
                     <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase"}}>Trades</div>
@@ -3073,7 +3073,7 @@ function ParentDash({kids,onResetKid,onLogout}){
         )}
         <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,padding:14,marginTop:8}}>
           <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff",marginBottom:10}}>📋 How it works</div>
-          {["Each kid's progress saves automatically — closing the app never loses their data","You see real profit/loss tracking: all-time gains AND realised P&L from sells","Every buy and sell is logged with date and profit/loss","Kids can't access parent mode — it's behind a separate PIN + 2FA"].map((t,i)=>(
+          {["Each kid's progress saves automatically — closing the app never loses their data","You see real profit/loss tracking: all-time gains AND realized P&L from sells","Every buy and sell is logged with date and profit/loss","Kids can't access parent mode — it's behind a separate PIN + 2FA"].map((t,i)=>(
             <div key={i} style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.6)",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.07)",display:"flex",gap:8}}><span style={{color:"#86efac",flexShrink:0}}>→</span>{t}</div>
           ))}
         </div>

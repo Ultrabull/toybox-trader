@@ -74,10 +74,18 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
     }
+    // Send the device's timezone so reminders fire at the kid's LOCAL time,
+    // wherever they are.
+    let tz = "";
+    try {
+      tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    } catch {
+      /* ignore */
+    }
     const res = await fetch("/.netlify/functions/push-subscribe", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ space: spaceId(), subscription: sub, op: "subscribe" }),
+      body: JSON.stringify({ space: spaceId(), subscription: sub, tz, op: "subscribe" }),
     });
     if (!res.ok) throw new Error("save-failed");
     return { ok: true };

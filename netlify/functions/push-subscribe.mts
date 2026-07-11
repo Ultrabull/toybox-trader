@@ -29,7 +29,7 @@ export default async (req: Request) => {
     return json({ ok: false, error: "bad-json" }, 400);
   }
 
-  const { space, subscription, op } = body || {};
+  const { space, subscription, tz, op } = body || {};
   if (typeof space !== "string" || space.length < 8 || space.length > 256) {
     return json({ ok: false, error: "bad-space" }, 400);
   }
@@ -50,7 +50,9 @@ export default async (req: Request) => {
       await sql`DELETE FROM kv WHERE space = ${space} AND k = ${key}`;
       return json({ ok: true });
     }
-    const value = JSON.stringify(subscription);
+    // Store the subscription together with the device timezone, so the
+    // reminder scheduler can fire at the kid's local time.
+    const value = JSON.stringify({ sub: subscription, tz: typeof tz === "string" ? tz : "" });
     if (value.length > 4000) return json({ ok: false, error: "too-big" }, 400);
     await sql`
       INSERT INTO kv (space, k, v, updated_at) VALUES (${space}, ${key}, ${value}, now())
