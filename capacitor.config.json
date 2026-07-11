@@ -1,0 +1,13 @@
+{
+  "appId": "com.toyboxtrader.app",
+  "appName": "Toybox Trader",
+  "webDir": "dist",
+  "backgroundColor": "#0d0621",
+  "ios": {
+    "backgroundColor": "#0d0621",
+    "contentInset": "always"
+  },
+  "android": {
+    "backgroundColor": "#0d0621"
+  }
+}

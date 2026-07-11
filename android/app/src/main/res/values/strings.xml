@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Toybox Trader</string>
+    <string name="title_activity_main">Toybox Trader</string>
+    <string name="package_name">com.toyboxtrader.app</string>
+    <string name="custom_url_scheme">com.toyboxtrader.app</string>
+</resources>

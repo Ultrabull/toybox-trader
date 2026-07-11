@@ -1,3 +1,4 @@
+import { apiUrl } from "./api";
 // Client-side push notifications.
 //
 // enablePush(): asks permission, subscribes via the browser's PushManager using
@@ -55,7 +56,7 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
   // Fetch the VAPID public key from the server.
   let publicKey = "";
   try {
-    const cfg = await fetch("/.netlify/functions/push-config").then((r) => r.json());
+    const cfg = await fetch(apiUrl("/.netlify/functions/push-config")).then((r) => r.json());
     publicKey = cfg?.publicKey || "";
   } catch {
     /* handled below */
@@ -82,7 +83,7 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
     } catch {
       /* ignore */
     }
-    const res = await fetch("/.netlify/functions/push-subscribe", {
+    const res = await fetch(apiUrl("/.netlify/functions/push-subscribe"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ space: spaceId(), subscription: sub, tz, op: "subscribe" }),
@@ -99,7 +100,7 @@ export async function disablePush(): Promise<void> {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
     if (sub) {
-      await fetch("/.netlify/functions/push-subscribe", {
+      await fetch(apiUrl("/.netlify/functions/push-subscribe"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ space: spaceId(), subscription: sub, op: "unsubscribe" }),

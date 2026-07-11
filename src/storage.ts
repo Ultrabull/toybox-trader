@@ -1,3 +1,4 @@
+import { apiUrl } from "./api";
 // ─── window.storage: cloud-backed, offline-first, with a family login ───────
 //
 // ToyboxFull.tsx persists everything (kids registry + each kid's progress)
@@ -50,7 +51,7 @@ declare global {
   }
 }
 
-const API = "/.netlify/functions/kv";
+const API = apiUrl("/.netlify/functions/kv");
 const PREFIX = "toybox:"; // app-owned keys we cache and sync
 const INTERNAL = "toybox:sync:"; // device-local, never synced
 const SPACE_LS_KEY = "toybox:sync:space"; // derived family space id (kept signed in)
@@ -338,7 +339,7 @@ const sync: SyncApi = {
     if (!space) return { ok: false, error: "Sign in to enable alerts." };
     if (!text || !text.trim()) return { ok: false, error: "Nothing to send." };
     try {
-      const res = await fetch("/.netlify/functions/notify", {
+      const res = await fetch(apiUrl("/.netlify/functions/notify"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ space, text }),
@@ -357,7 +358,7 @@ const sync: SyncApi = {
     const space = storedSpace();
     if (space) {
       try {
-        await fetch("/.netlify/functions/delete-account", {
+        await fetch(apiUrl("/.netlify/functions/delete-account"), {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ space }),

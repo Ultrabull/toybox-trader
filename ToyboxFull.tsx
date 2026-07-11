@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { apiUrl } from "./src/api";
 
 // ─── Constants ─────────────────────────────────────
 const AVATARS = ["🚀","🦁","⚡","🐉","🦊","🐼","🦋","🎮","🏆","🌟","🦅","🐯","🐬","🦄","🐸","🎸","🧙","🎯","🐺","🦈"];
@@ -1207,7 +1208,7 @@ function KidDash({user,savedState,onLogout}){
   const [refPrice,setRefPrice]=useState({});
   const fetchRealPrices=async()=>{
     try{
-      const r=await fetch("/.netlify/functions/prices",{signal:AbortSignal.timeout(8000)});
+      const r=await fetch(apiUrl("/.netlify/functions/prices"),{signal:AbortSignal.timeout(8000)});
       if(!r.ok) throw new Error("http "+r.status);
       const d=await r.json();
       if(d?.prices&&Object.keys(d.prices).length){
@@ -1353,7 +1354,7 @@ function KidDash({user,savedState,onLogout}){
       const since = ord.placedAt || (Date.now()-86400000); // default 1 day back
       try {
         // Candles come from our own server function (reliable, no CORS/proxy)
-        const r = await fetch(`/.netlify/functions/prices?history=${tk}&since=${since}`,{signal:AbortSignal.timeout(8000)});
+        const r = await fetch(apiUrl(`/.netlify/functions/prices?history=${tk}&since=${since}`),{signal:AbortSignal.timeout(8000)});
         if(r.ok){ const d=await r.json(); if(Array.isArray(d.candles)&&d.candles.length) history[tk]=d.candles; }
       } catch(e){ /* no history for this ticker — will fall through to live check */ }
     }
