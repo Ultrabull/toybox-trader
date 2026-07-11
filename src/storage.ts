@@ -6,7 +6,7 @@ import { apiUrl } from "./api";
 // with two layers:
 //
 //   • localStorage  — instant reads/writes, and a full offline cache.
-//   • Neon (cloud)  — via /.netlify/functions/kv, so accounts sync across
+//   • Neon (cloud)  — via /api/kv, so accounts sync across
 //                     devices.
 //
 // A household is a "family": identified by a cloud `space`. Instead of a random
@@ -51,7 +51,7 @@ declare global {
   }
 }
 
-const API = apiUrl("/.netlify/functions/kv");
+const API = apiUrl("/api/kv");
 const PREFIX = "toybox:"; // app-owned keys we cache and sync
 const INTERNAL = "toybox:sync:"; // device-local, never synced
 const SPACE_LS_KEY = "toybox:sync:space"; // derived family space id (kept signed in)
@@ -339,7 +339,7 @@ const sync: SyncApi = {
     if (!space) return { ok: false, error: "Sign in to enable alerts." };
     if (!text || !text.trim()) return { ok: false, error: "Nothing to send." };
     try {
-      const res = await fetch(apiUrl("/.netlify/functions/notify"), {
+      const res = await fetch(apiUrl("/api/notify"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ space, text }),
@@ -358,7 +358,7 @@ const sync: SyncApi = {
     const space = storedSpace();
     if (space) {
       try {
-        await fetch(apiUrl("/.netlify/functions/delete-account"), {
+        await fetch(apiUrl("/api/delete-account"), {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ space }),

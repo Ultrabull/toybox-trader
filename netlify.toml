@@ -16,6 +16,13 @@
   # web-push ships helper deps that bundle poorly; keep it as an installed module.
   external_node_modules = ["web-push"]
 
+# Map the shared /api/* paths to the Netlify functions (must come BEFORE the
+# SPA catch-all). This lets the app use /api/* on both Netlify and Cloudflare.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
 # Single-page app: serve index.html for any path so refreshes and deep
 # links don't 404.
 [[redirects]]

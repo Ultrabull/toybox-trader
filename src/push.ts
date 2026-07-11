@@ -56,7 +56,7 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
   // Fetch the VAPID public key from the server.
   let publicKey = "";
   try {
-    const cfg = await fetch(apiUrl("/.netlify/functions/push-config")).then((r) => r.json());
+    const cfg = await fetch(apiUrl("/api/push-config")).then((r) => r.json());
     publicKey = cfg?.publicKey || "";
   } catch {
     /* handled below */
@@ -83,7 +83,7 @@ export async function enablePush(): Promise<{ ok: boolean; error?: string }> {
     } catch {
       /* ignore */
     }
-    const res = await fetch(apiUrl("/.netlify/functions/push-subscribe"), {
+    const res = await fetch(apiUrl("/api/push-subscribe"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ space: spaceId(), subscription: sub, tz, op: "subscribe" }),
@@ -100,7 +100,7 @@ export async function disablePush(): Promise<void> {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
     if (sub) {
-      await fetch(apiUrl("/.netlify/functions/push-subscribe"), {
+      await fetch(apiUrl("/api/push-subscribe"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ space: spaceId(), subscription: sub, op: "unsubscribe" }),
