@@ -13,6 +13,8 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  # web-push ships helper deps that bundle poorly; keep it as an installed module.
+  external_node_modules = ["web-push"]
 
 # Single-page app: serve index.html for any path so refreshes and deep
 # links don't 404.
