@@ -103,6 +103,10 @@ export function mountSyncUI() {
         <div id="tbx-tg-msg"></div>
 
         <hr class="sep" />
+        <div class="lbl2">⭐ Toybox Plus</div>
+        <div id="tbx-plus-body"></div>
+
+        <hr class="sep" />
         <button class="ghost" id="tbx-signout" type="button">Sign out on this device</button>
         <button class="ghost" id="tbx-del-open" type="button" style="color:#fca5a5;border-color:rgba(239,68,68,.35)">Delete account &amp; all data</button>
         <div id="tbx-del-box"></div>
@@ -208,6 +212,35 @@ export function mountSyncUI() {
         tgState.textContent = "Not connected yet.";
         setMsg("Disconnected.", "rgba(255,255,255,.6)");
       };
+
+      // ── Toybox Plus (parent unlock) ──
+      // The signed-in panel is already parent-only (needs the family password),
+      // so this acts as the parental gate. Today it flips a synced flag; once
+      // real in-app purchases are added, this button becomes "Subscribe".
+      const plusBody = panel.querySelector<HTMLElement>("#tbx-plus-body")!;
+      const renderPlus = (active: boolean) => {
+        if (active) {
+          plusBody.innerHTML = `<div style="font-size:12.5px;color:#6ee7b7;font-weight:800">✓ Toybox Plus is active for your family 🎉</div>`;
+          return;
+        }
+        plusBody.innerHTML = `
+          <p class="muted">Unlock more lessons, family accounts, the leaderboard, parent reports, and exclusive pet crowns. Your kids get an instant reward when you unlock. 💛</p>
+          <button class="act" id="tbx-plus-unlock" type="button" style="margin-top:8px">⭐ Unlock Toybox Plus</button>
+          <div id="tbx-plus-msg" style="font-size:12px;margin-top:8px;min-height:14px"></div>`;
+        plusBody.querySelector<HTMLButtonElement>("#tbx-plus-unlock")!.onclick = async () => {
+          const msg = plusBody.querySelector<HTMLElement>("#tbx-plus-msg")!;
+          msg.style.color = "rgba(255,255,255,.75)";
+          msg.textContent = "Unlocking…";
+          await window.storage?.set("toybox:family:premium", "true");
+          msg.style.color = "#6ee7b7";
+          msg.textContent = "Unlocked! Reloading…";
+          setTimeout(() => location.reload(), 900);
+        };
+      };
+      window.storage?.get("toybox:family:premium").then((r) => {
+        const v = (r?.value || "").trim();
+        renderPlus(v === "true" || v === "1");
+      });
 
       panel.querySelector<HTMLButtonElement>("#tbx-signout")!.onclick = () => {
         sync.signOut();

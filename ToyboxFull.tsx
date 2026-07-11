@@ -976,6 +976,10 @@ function KidDash({user,savedState,onLogout}){
   const [lastLessonAt, setLastLessonAt]    = useState(S.lastLessonAt ?? null);   // when a lesson was last completed (jackpot gate)
   const [showDailyBonus,setShowDailyBonus] = useState(false);                    // daily-bonus popup open
   const [bonusResult,  setBonusResult]     = useState(null);                     // what the claim awarded
+  const [isPremium,    setIsPremium]       = useState(false);                    // family has Toybox Plus
+  const [showPlus,     setShowPlus]        = useState(false);                    // Plus upsell modal
+  const [askedPlus,    setAskedPlus]       = useState(false);                    // kid sent the "ask a grown-up" nudge
+  const [plusCelebrate,setPlusCelebrate]   = useState(false);                    // celebrate a fresh unlock
   const [orderToast,  setOrderToast]  = useState(null);                          // "order filled!" toast
   const [success,     setSuccess]     = useState(null);
   const [cashReward,  setCashReward]  = useState(null);                          // lesson cash pop
@@ -1625,6 +1629,35 @@ function KidDash({user,savedState,onLogout}){
     fx("reward",30);
   };
 
+  // ── Toybox Plus (premium) ──
+  // Premium is a family-level flag synced via the cloud. When a device first
+  // sees it flip on, celebrate + grant the kid an instant reward (so the
+  // parent's "yes" feels amazing to the kid).
+  useEffect(()=>{ (async()=>{
+    if(!hydrated) return;
+    const r = await loadData("toybox:family:premium");
+    const prem = r===true || r==="1" || r===1;
+    setIsPremium(prem);
+    if(prem){
+      let seen=false; try{ seen=localStorage.getItem("toybox:sync:premiumseen")==="1"; }catch(e){}
+      if(!seen){
+        try{ localStorage.setItem("toybox:sync:premiumseen","1"); }catch(e){}
+        setCoins(c=>c+500);
+        setOwned(o=>[...new Set([...o,"pet_crown","frame_gold"])]);
+        setPlusCelebrate(true);
+        fx("reward",40);
+      }
+    }
+  })(); },[hydrated]);
+
+  const askGrownup = () => {
+    try {
+      window.toyboxSync?.notify?.(`⭐ ${user?.name||"Your child"} wants Toybox Plus! They're on a ${Math.max(1,streak)}-day streak 🔥. To unlock: open Toybox Trader → tap the ☁️ button → Unlock Toybox Plus.`);
+    } catch(e) {}
+    setAskedPlus(true);
+    fx("reward",20);
+  };
+
   const startChallenge=sib=>{
     setChallenge({sib,myGain:allTimeGain,sibGain:sib.portPnl,started:new Date().toLocaleDateString("en-US"),ends:new Date(Date.now()+7*86400000).toLocaleDateString("en-US",{day:"numeric",month:"short"})});
   };
@@ -1736,6 +1769,17 @@ function KidDash({user,savedState,onLogout}){
         {/* HOME */}
         {nav==="Home"&&(
           <div>
+            {/* Toybox Plus upsell — only for free families */}
+            {!isPremium&&(
+              <div onClick={()=>{setShowPlus(true);setAskedPlus(false);}} style={{background:"linear-gradient(135deg,#f59e0b,#f97316)",borderRadius:14,padding:"12px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10,cursor:"pointer",boxShadow:"0 4px 16px rgba(245,158,11,.35)"}}>
+                <span style={{fontSize:24}}>⭐</span>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>Unlock Toybox Plus!</div>
+                  <div style={{fontSize:11,color:"rgba(255,255,255,.9)",fontWeight:700,marginTop:1}}>More adventures, a royal crown 👑 & family play</div>
+                </div>
+                <span style={{fontSize:13,fontWeight:800,color:"#fff",background:"rgba(0,0,0,.18)",padding:"5px 10px",borderRadius:100}}>See →</span>
+              </div>
+            )}
             {/* Welcome back — since last visit */}
             {sinceLastVisit!=null&&Math.abs(sinceLastVisit)>=0.01&&(
               <div style={{background:sinceLastVisit>=0?"rgba(16,185,129,.12)":"rgba(239,68,68,.1)",border:`1px solid ${sinceLastVisit>=0?"rgba(16,185,129,.3)":"rgba(239,68,68,.3)"}`,borderRadius:14,padding:"12px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
@@ -2746,6 +2790,44 @@ function KidDash({user,savedState,onLogout}){
           )}
         </div>
       );})()}
+
+      {/* Toybox Plus upsell modal — the "ask a grown-up" bridge */}
+      {showPlus&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:361,display:"flex",alignItems:"center",justifyContent:"center",padding:22}}>
+          <div style={{background:"#141028",border:"1px solid rgba(245,158,11,.4)",borderRadius:20,padding:24,maxWidth:360,width:"100%",textAlign:"center"}}>
+            <div style={{fontSize:52}}>⭐</div>
+            <div style={{fontFamily:"var(--fd)",fontSize:23,color:"#fff",margin:"2px 0 4px"}}>Toybox Plus</div>
+            <div style={{fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,.6)",marginBottom:14}}>Unlock the full adventure!</div>
+            <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:9,marginBottom:16}}>
+              {[["👑","A royal Golden Crown for your pet + gold name frame"],["📚","20+ more lessons & new adventure levels"],["🧊","Streak Freeze — never lose your streak"],["👨‍👩‍👧‍👦","Add your brothers & sisters + the family leaderboard"],["💰","500 bonus coins the moment you unlock!"]].map(([ic,t])=>(
+                <div key={t} style={{display:"flex",gap:10,alignItems:"center"}}>
+                  <span style={{fontSize:20}}>{ic}</span>
+                  <span style={{fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,.85)",lineHeight:1.4}}>{t}</span>
+                </div>
+              ))}
+            </div>
+            {askedPlus?(
+              <div style={{background:"rgba(16,185,129,.12)",border:"1px solid rgba(16,185,129,.3)",borderRadius:13,padding:13,marginBottom:12}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#6ee7b7"}}>Asked! 🎉</div>
+                <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.7)",marginTop:3,lineHeight:1.5}}>Tell your grown-up to check their phone 📲 — or open ☁️ → Unlock Toybox Plus.</div>
+              </div>
+            ):(
+              <button onClick={askGrownup} style={{width:"100%",padding:15,borderRadius:14,border:"none",background:"linear-gradient(135deg,#f59e0b,#f97316)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer",boxShadow:"0 6px 22px rgba(245,158,11,.45)"}}>⭐ Ask a grown-up to unlock</button>
+            )}
+            <button onClick={()=>setShowPlus(false)} style={{width:"100%",marginTop:10,background:"transparent",border:"1px solid rgba(255,255,255,.2)",color:"rgba(255,255,255,.6)",borderRadius:12,padding:11,fontWeight:700,fontSize:13.5,cursor:"pointer",fontFamily:"var(--fb)"}}>Maybe later</button>
+          </div>
+        </div>
+      )}
+
+      {/* Fresh Plus unlock — celebrate + reward */}
+      {plusCelebrate&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:362,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,padding:24}}>
+          <div style={{fontSize:76,animation:"popUp .6s cubic-bezier(.34,1.56,.64,1)"}}>👑</div>
+          <div style={{fontFamily:"var(--fd)",fontSize:26,color:"#fbbf24",textAlign:"center"}}>You're a Plus member!</div>
+          <div style={{fontSize:14,fontWeight:700,color:"rgba(255,255,255,.85)",textAlign:"center",maxWidth:300,lineHeight:1.5}}>Thank your grown-up! 💛 You got <strong style={{color:"#fbbf24"}}>500 coins</strong>, a <strong>Golden Crown</strong> for your pet, and a <strong>gold name frame</strong>!</div>
+          <button onClick={()=>setPlusCelebrate(false)} style={{marginTop:8,padding:"13px 30px",borderRadius:14,border:"none",background:"linear-gradient(135deg,#f59e0b,#f97316)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer"}}>Awesome! 🚀</button>
+        </div>
+      )}
 
       {newBadge&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.9)",zIndex:350,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:14,padding:24}}>
