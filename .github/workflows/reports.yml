@@ -1,0 +1,38 @@
+name: Telegram reports
+
+# Weekly (Sun 17:00 UTC) and monthly (1st 09:00 UTC) family reports.
+# Replaces the Netlify scheduled functions so reports don't depend on Netlify.
+on:
+  schedule:
+    - cron: "0 17 * * 0" # weekly — Sundays
+    - cron: "0 9 1 * *" # monthly — 1st of month
+  workflow_dispatch:
+    inputs:
+      period:
+        description: "weekly or monthly"
+        default: "weekly"
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - name: Pick period
+        id: period
+        run: |
+          if [ "${{ github.event.schedule }}" = "0 9 1 * *" ]; then
+            echo "value=monthly" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.inputs.period }}" ]; then
+            echo "value=${{ github.event.inputs.period }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=weekly" >> "$GITHUB_OUTPUT"
+          fi
+      - run: node scripts/send-reports.mjs ${{ steps.period.outputs.value }}

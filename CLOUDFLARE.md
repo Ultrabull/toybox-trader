@@ -39,11 +39,25 @@ Then **re-deploy** (Deployments → Retry deployment) so the functions pick them
 Open your `*.pages.dev` URL → tap **☁️ → Sign in** with your family email +
 password → your kids load from Neon. Check prices show and a trade works.
 
-## What's NOT migrated yet (Phase 2)
-The **scheduled** jobs — weekly/monthly Telegram reports and the daily push
-reminders — aren't on Cloudflare yet (Cloudflare Pages doesn't run cron). They'll
-move to **GitHub Actions** (scheduled) in the next step. Until then they keep
-running on your Netlify site, so you don't lose them.
+## Scheduled jobs now run on GitHub Actions (Phase 2 — done)
+The weekly/monthly Telegram reports and the daily push reminders no longer need
+Netlify. They run as scheduled **GitHub Actions** (`.github/workflows/reports.yml`
+and `push-reminders.yml`), talking to Neon directly.
+
+To turn them on, add these **GitHub repository secrets**
+(repo → Settings → Secrets and variables → Actions → New repository secret):
+
+| Secret | For |
+|---|---|
+| `DATABASE_URL` | your Neon connection string (required for both) |
+| `TELEGRAM_BOT_TOKEN` | Telegram reports |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | push reminders |
+
+Without the secrets, the jobs run but safely do nothing. You can test them any
+time from **Actions → (workflow) → Run workflow**.
+
+> Note on Actions minutes: push-reminders runs hourly. That's fine on the free
+> tier, but if you want to trim usage you can reduce it to a few fixed hours.
 
 ## Notes
 - I can't deploy to your Cloudflare account from here, so **the first deploy is
