@@ -56,20 +56,50 @@ async function sendTelegram(token, chatId, text) {
   } catch {}
 }
 
+// Send an email via Resend. Returns true on success.
+export async function sendEmail(apiKey, from, to, subject, text) {
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        from,
+        to,
+        subject,
+        text,
+        html: "<pre style='font:15px/1.6 system-ui,sans-serif;white-space:pre-wrap'>" +
+          text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]) +
+          "</pre>",
+      }),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+const EMAIL_KEY = "toybox:email:notify";
+
 export async function sendReports(period, sql, token, days, now = Date.now()) {
   const cutoff = now - days * 86_400_000;
-  const families = await sql`SELECT space, v FROM kv WHERE k = ${CHAT_KEY}`;
-  if (!families.length) return { families: 0, sent: 0 };
+  const resendKey = process.env.RESEND_API_KEY;
+  const emailFrom = process.env.EMAIL_FROM || "Toybox Trader <onboarding@resend.dev>";
+
+  // Families that have ANY parent channel configured (Telegram and/or email).
+  const rows = await sql`SELECT space, k, v FROM kv WHERE k = ${CHAT_KEY} OR k = ${EMAIL_KEY}`;
+  const bySpace = new Map();
+  for (const r of rows) {
+    if (!bySpace.has(r.space)) bySpace.set(r.space, {});
+    if (r.k === CHAT_KEY) bySpace.get(r.space).chat = r.v;
+    else bySpace.get(r.space).email = r.v;
+  }
+  if (bySpace.size === 0) return { families: 0, sent: 0 };
 
   const prices = await fetchPrices();
   const heading = period === "weekly" ? "📅 Weekly report" : "🗓️ Monthly report";
   let sent = 0;
 
-  for (const fam of families) {
-    const space = fam.space;
-    const chatId = String(parseMaybeJson(fam.v, "")).trim();
-    if (!chatId) continue;
-
+  for (const [space, channels] of bySpace) {
     const regRows = await sql`SELECT v FROM kv WHERE space = ${space} AND k = 'toybox:kids:registry'`;
     const kids = parseMaybeJson(regRows[0]?.v, []);
     if (!Array.isArray(kids) || kids.length === 0) continue;
@@ -117,8 +147,15 @@ export async function sendReports(period, sql, token, days, now = Date.now()) {
 
     if (!anyKid) continue;
     lines.push("Keep learning! 🚀");
-    await sendTelegram(token, chatId, lines.join("\n"));
-    sent++;
+    const body = lines.join("\n");
+
+    const chatId = channels.chat ? String(parseMaybeJson(channels.chat, "")).trim() : "";
+    if (token && chatId) await sendTelegram(token, chatId, body);
+
+    const email = channels.email ? String(parseMaybeJson(channels.email, "")).trim() : "";
+    if (resendKey && email) await sendEmail(resendKey, emailFrom, email, `${heading} — Toybox Trader`, body);
+
+    if ((token && chatId) || (resendKey && email)) sent++;
   }
-  return { families: families.length, sent };
+  return { families: bySpace.size, sent };
 }

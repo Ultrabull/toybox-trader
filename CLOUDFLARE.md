@@ -32,6 +32,8 @@ Pages project → **Settings → Environment variables → Production** → add:
 | `VAPID_PUBLIC_KEY` | (the value I gave you) | push (optional) |
 | `VAPID_PRIVATE_KEY` | (the value I gave you) | push (optional) |
 | `VAPID_SUBJECT` | `mailto:toyboxtrader.support@gmail.com` | push (optional) |
+| `RESEND_API_KEY` | your Resend API key | **email updates** (optional) — powers the ☁️ "Send test" email |
+| `EMAIL_FROM` | e.g. `Toybox Trader <onboarding@resend.dev>` | email "from" address |
 
 Then **re-deploy** (Deployments → Retry deployment) so the functions pick them up.
 
@@ -52,6 +54,15 @@ To turn them on, add these **GitHub repository secrets**
 | `DATABASE_URL` | your Neon connection string (required for both) |
 | `TELEGRAM_BOT_TOKEN` | Telegram reports |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | push reminders |
+| `RESEND_API_KEY` / `EMAIL_FROM` | weekly/monthly report **emails** |
+
+### Getting a Resend key (for email updates)
+1. Sign up at **resend.com** (free tier: ~3,000 emails/mo).
+2. **API Keys → Create** → copy the key → that's `RESEND_API_KEY`.
+3. For testing you can send from `onboarding@resend.dev` **to your own account
+   email**. To email *any* parent reliably you must **verify a sending domain**
+   in Resend (needs a custom domain) and set `EMAIL_FROM` to e.g.
+   `Toybox Trader <updates@yourdomain.com>`.
 
 Without the secrets, the jobs run but safely do nothing. You can test them any
 time from **Actions → (workflow) → Run workflow**.
