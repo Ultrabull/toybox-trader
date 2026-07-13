@@ -101,27 +101,27 @@ const MARKET = [
   {ticker:"AAPL",name:"Apple",   type:"stock", basePrice:250.00,icon:"🍎",color:"#6366f1",
    tagline:"Makes iPhones — billions sold every year",risk:"low",
    kidEx:"Apple is like the most popular kid at school. Every iPhone your parents buy makes Apple richer — and you too if you own a block!",
-   news:"📱 iPhone 16 launched! Massive lines outside stores worldwide.",newsGood:true,trend:"up"},
+   news:"📱 Big idea: when Apple launches a popular new iPhone, lots of people buy it — that can lift the stock.",newsGood:true,trend:"up"},
   {ticker:"RBLX",name:"Roblox",  type:"stock", basePrice:115.00,icon:"🎮",color:"#ec4899",
    tagline:"70 million kids play this every single day",risk:"medium",
    kidEx:"Every time someone buys Robux, Roblox earns money. Own a block and get a tiny slice of every Robux purchase!",
-   news:"🎮 Roblox hit 71 million daily players — biggest ever!",newsGood:true,trend:"up"},
+   news:"🎮 Big idea: the more kids who play Roblox and buy Robux, the more the company can earn.",newsGood:true,trend:"up"},
   {ticker:"DIS", name:"Disney",  type:"stock", basePrice:112.00,icon:"🏰",color:"#8b5cf6",
    tagline:"Owns Marvel, Star Wars, Frozen & Disney+",risk:"low",
    kidEx:"Disney owns almost every movie you love. Every cinema ticket and Disney+ subscription earns them money!",
-   news:"🎬 New Marvel movie broke box office records on opening weekend!",newsGood:true,trend:"flat"},
+   news:"🎬 Big idea: a hit Marvel movie or busy Disney+ can mean more money for Disney.",newsGood:true,trend:"flat"},
   {ticker:"NVDA",name:"Nvidia",  type:"stock", basePrice:175.00,icon:"🖥️",color:"#10b981",
    tagline:"Their chips power every video game AND every AI",risk:"medium",
    kidEx:"Your PS5, Xbox and every AI chatbot runs on Nvidia chips. They power gaming AND AI!",
-   news:"🤖 Every major AI company ordered billions of Nvidia chips!",newsGood:true,trend:"up"},
+   news:"🤖 Big idea: when AI and gaming companies need lots of chips, Nvidia can sell more of them.",newsGood:true,trend:"up"},
   {ticker:"BTC", name:"Bitcoin", type:"crypto",basePrice:100000,icon:"₿", color:"#f59e0b",
    tagline:"Only 21 million ever — like limited Pokémon cards",risk:"high",
    kidEx:"Only 21 million Bitcoins will EVER exist. Like a limited holographic Pokémon card — if everyone wants it, price goes up!",
-   news:"⚠️ Bitcoin dropped 12% then bounced 8%. Very volatile this week!",newsGood:false,trend:"volatile"},
+   news:"⚠️ Big idea: Bitcoin's price can jump up and down a LOT in a short time — that's called being 'volatile'.",newsGood:false,trend:"volatile"},
   {ticker:"ETH", name:"Ethereum",type:"crypto",basePrice:3500,  icon:"⟠",color:"#06b6d4",
    tagline:"Digital money that runs thousands of apps",risk:"high",
    kidEx:"Ethereum is like Roblox's currency system but for the whole internet. More apps = more demand!",
-   news:"⚠️ Ethereum fell 10% this week. Crypto markets very shaky.",newsGood:false,trend:"volatile"},
+   news:"⚠️ Big idea: Ethereum is crypto too, so its price can also swing up and down quickly — high risk!",newsGood:false,trend:"volatile"},
 ];
 // Approximate fallback prices — only shown if the live price feed is
 // unreachable. The Netlify /prices function overrides these with real quotes.
@@ -301,18 +301,18 @@ const LESSONS = [
 
 // ─── Daily stories ─────────────────────────────────
 const DAILY_STORIES = [
-  {icon:"🍎",title:"Why did Apple go up today?",color:"#6366f1",
-   body:"Apple just announced their new iPhone 16 line. Analysts say it could be their biggest seller ever. When a company announces a hit product, investors rush to buy — pushing the price UP! This is called a 'catalyst'.",
+  {icon:"🍎",title:"Why might a stock like Apple go UP?",color:"#6366f1",
+   body:"Imagine Apple announces a brand-new iPhone that everyone wants. When a company launches a hit product, investors rush to buy the stock — pushing the price UP! A piece of news that moves a price like this is called a 'catalyst'.",
    lesson:"💡 Good news = more buyers = higher price. Always check WHY a stock is moving!"},
-  {icon:"🎮",title:"Why did Roblox jump 8% today?",color:"#ec4899",
-   body:"Roblox reported 71 million daily players — beating expectations by 15 million. More players = more Robux purchases = more revenue. Investors got excited and bought shares, pushing the price up fast.",
+  {icon:"🎮",title:"Why might a game company like Roblox jump?",color:"#ec4899",
+   body:"Imagine Roblox reports way more players than people expected. More players = more Robux purchases = more money for the company. When a company beats expectations, investors get excited and buy shares — pushing the price up fast.",
    lesson:"💡 Earnings reports that BEAT expectations usually cause big price jumps. Watch out for these!"},
-  {icon:"📉",title:"Why did the whole market drop today?",color:"#ef4444",
-   body:"The US government raised interest rates. Higher rates mean it costs more to borrow money. Companies pay more in loans, profits shrink, and investors sell stocks to put money in bank savings instead.",
+  {icon:"📉",title:"Why might the WHOLE market drop at once?",color:"#ef4444",
+   body:"Say the government raises interest rates. Higher rates mean it costs more to borrow money. Companies pay more on loans, their profits shrink, and investors sell stocks to put money in safe savings instead.",
    lesson:"💡 Interest rate changes affect ALL stocks at once. It's called a 'macro event' — the economy affecting everything!"},
-  {icon:"₿",title:"Why did Bitcoin crash 15% overnight?",color:"#f59e0b",
-   body:"A large crypto exchange had technical problems and paused withdrawals. Scared investors sold Bitcoin as fast as possible in case they couldn't access their money. Mass fear = mass selling = price crash.",
-   lesson:"💡 Crypto crashes fast because it's driven by CONFIDENCE, not real products. When confidence cracks — watch out!"},
+  {icon:"₿",title:"Why might Bitcoin crash overnight?",color:"#f59e0b",
+   body:"Imagine a big crypto exchange has technical problems and pauses withdrawals. Scared investors sell Bitcoin as fast as they can in case they can't get their money. Mass fear = mass selling = price crash.",
+   lesson:"💡 Crypto can crash fast because it's driven by CONFIDENCE, not real products. When confidence cracks — watch out!"},
   {icon:"🦈",title:"What is a short squeeze?",color:"#8b5cf6",
    body:"Some traders BET that a stock will go DOWN by 'short selling' it. But if the stock goes UP instead, they panic-buy to stop their losses. All that panic buying makes the stock go up EVEN MORE. It's a squeeze!",
    lesson:"💡 GameStop went from $4 to $483 in 2021 because of a short squeeze. Regular investors made fortunes overnight!"},
@@ -1875,13 +1875,14 @@ function KidDash({user,savedState,onLogout}){
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                 <span style={{fontSize:24}}>{DAILY_STORIES[storyIdx].icon}</span>
                 <div>
-                  <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:".5px"}}>📰 Today's Market Story</div>
+                  <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:".5px"}}>📖 Story Time · Learn how markets move</div>
                   <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{DAILY_STORIES[storyIdx].title}</div>
                 </div>
                 <button onClick={()=>setStoryIdx(i=>(i+1)%DAILY_STORIES.length)} style={{marginLeft:"auto",background:"rgba(255,255,255,.1)",border:"none",borderRadius:8,padding:"5px 9px",color:"rgba(255,255,255,.6)",cursor:"pointer",fontSize:11,fontWeight:800,flexShrink:0}}>Next →</button>
               </div>
               <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.65,marginBottom:8}}>{DAILY_STORIES[storyIdx].body}</div>
               <div style={{fontSize:11,fontWeight:800,color:DAILY_STORIES[storyIdx].color,background:`${DAILY_STORIES[storyIdx].color}22`,borderRadius:8,padding:"6px 10px"}}>{DAILY_STORIES[storyIdx].lesson}</div>
+              <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,.35)",marginTop:7,textAlign:"center"}}>✨ Make-believe example to teach an idea — not real news</div>
             </div>
 
             {/* Missions */}
