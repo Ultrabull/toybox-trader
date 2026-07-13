@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { apiUrl } from "./src/api";
-import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets } from "./src/tasks";
+import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS } from "./src/tasks";
 
 // ─── Constants ─────────────────────────────────────
 const AVATARS = ["🚀","🦁","⚡","🐉","🦊","🐼","🦋","🎮","🏆","🌟","🦅","🐯","🐬","🦄","🐸","🎸","🧙","🎯","🐺","🦈"];
@@ -1060,6 +1060,10 @@ function KidDash({user,savedState,onLogout}){
   const [choreGoal,   setChoreGoal]   = useState(0);
   const [taskCelebrate,setTaskCelebrate]=useState(null);                         // {emoji,title,coins?}
   const [investOpen,  setInvestOpen]  = useState(false);
+  const [owed,        setOwed]        = useState(0);                             // pocket money owed to this kid (tracking only)
+  const [ttEnabled,   setTtEnabled]   = useState(false);                         // Together Time on/off (parent-set)
+  const [reqCat,      setReqCat]      = useState("together");
+  const [reqText,     setReqText]     = useState("");
   const [lesson,       setLesson]      = useState(null);   // lesson modal
   const [lessonSlide,  setLessonSlide] = useState(0);
   const [lessonProgress,setLessonProg]= useState({});     // saved progress per lesson
@@ -1309,10 +1313,12 @@ function KidDash({user,savedState,onLogout}){
     const t = applyRecurringResets(await loadTasks());
     setTasks(t); saveTasks(t);
     setStore(await loadStore());
+    const o = await loadOwed(); setOwed(o[user?.id]||0);
+    const s = await loadSettings(); setTtEnabled(!!s.togetherTime);
   };
   useEffect(()=>{ (async()=>{ await refreshTasks(); const g=await loadData(`toybox:choregoal:${user?.id}`); if(g) setChoreGoal(g); })(); },[]);
-  // Re-check for parent approvals whenever the Tasks view opens.
-  useEffect(()=>{ if(nav==="More"&&moreView==="Tasks") refreshTasks(); },[nav,moreView]);
+  // Re-check for parent approvals whenever the Tasks/Together views open.
+  useEffect(()=>{ if(nav==="More"&&(moreView==="Tasks"||moreView==="Together")) refreshTasks(); },[nav,moreView]);
   const myTasks = tasks.filter(t=>t.kidId===user?.id);
   const todoCount = myTasks.filter(t=>t.status==="todo").length;
 
@@ -1323,9 +1329,18 @@ function KidDash({user,savedState,onLogout}){
   };
   const collectTask = (task) => {
     const next = tasks.map(t=>t.id===task.id?{...t,status:"done",lastDone:new Date().toDateString()}:t);
-    setTasks(next); saveTasks(next);
-    if(task.reward.type==="coins"){ setCoins(c=>c+(task.reward.coins||0)); fx("reward",30); setTaskCelebrate({emoji:"🪙",title:task.title,coins:task.reward.coins||0}); }
-    else { fx("reward",30); setTaskCelebrate({emoji:task.reward.emoji||"🎁",title:task.title,label:task.reward.label}); }
+    setTasks(next); saveTasks(next); fx("reward",30);
+    if(task.reward.type==="coins"){ setCoins(c=>c+(task.reward.coins||0)); setTaskCelebrate({emoji:"🪙",title:task.title,coins:task.reward.coins||0}); }
+    else if(task.reward.type==="money"){ const amt=task.reward.money||0; (async()=>{ const o=await loadOwed(); o[user?.id]=(o[user?.id]||0)+amt; await saveOwed(o); setOwed(o[user?.id]); })(); setTaskCelebrate({emoji:"💵",title:task.title,label:`You earned ${fs$(amt)} pocket money — ask your grown-up!`}); }
+    else { setTaskCelebrate({emoji:task.reward.emoji||"🎁",title:task.title,label:task.reward.label}); }
+  };
+  // Together Time — kid asks a parent for shared time (no coins; the reward is the time).
+  const sendRequest = () => {
+    const text=reqText.trim(); if(!text) return;
+    (async()=>{ const r=await loadRequests(); r.unshift({id:uid(),kidId:user?.id,text,cat:reqCat,status:"asked",createdAt:Date.now()}); await saveRequests(r); })();
+    setReqText(""); fx("reward",20);
+    try{ window.toyboxSync?.notify?.(`💛 ${user?.name||"Your child"} would love some together time: "${text}". See it in Toybox → 👔 Parent → Together Time.`); }catch(e){}
+    setTaskCelebrate({emoji:"💛",title:"Request sent!",label:"Your grown-up will see it. Fingers crossed! 🤞"});
   };
   const redeemStoreItem = (item) => {
     if(coins < item.cost) return;
@@ -1853,6 +1868,7 @@ function KidDash({user,savedState,onLogout}){
 
   const MORE_ITEMS=[
     {id:"Tasks",   icon:"✅",label:"My Tasks"},
+    ...(ttEnabled?[{id:"Together",icon:"💛",label:"Together"}]:[]),
     {id:"Shop",    icon:"🛍️",label:"Shop"},
     {id:"Badges",  icon:"🏅",label:"Badges"},
     {id:"Performance",icon:"📈",label:"P&L"},
@@ -2283,6 +2299,13 @@ function KidDash({user,savedState,onLogout}){
                 </div>
                 <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,marginBottom:14}}>Do the tasks your grown-up gave you, tap <strong style={{color:"#fff"}}>“I did it!”</strong>, and earn coins &amp; rewards! 🎉</div>
 
+                {owed>0&&(
+                  <div style={{background:"linear-gradient(135deg,rgba(16,185,129,.14),rgba(16,185,129,.05))",border:"1px solid rgba(16,185,129,.3)",borderRadius:14,padding:13,marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:26}}>💵</span>
+                    <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#86efac"}}>{fs$(owed)} pocket money</div><div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.6)"}}>Your grown-up is keeping this for you — ask them for it! 🙂</div></div>
+                  </div>
+                )}
+
                 {myTasks.length===0&&store.length===0&&(
                   <div style={{background:"rgba(255,255,255,.05)",border:"1px dashed rgba(255,255,255,.18)",borderRadius:16,padding:22,textAlign:"center"}}>
                     <div style={{fontSize:40,marginBottom:8}}>📋</div>
@@ -2374,6 +2397,33 @@ function KidDash({user,savedState,onLogout}){
                 </>)}
 
                 {doneList.length>0&&<div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:12}}>✅ {doneList.length} task{doneList.length>1?"s":""} finished{doneList.some(t=>t.recurring!=="once")?" — daily/weekly ones come back!":""}</div>}
+              </div>
+              );
+            })()}
+
+            {/* TOGETHER TIME — kids ask a grown-up for time together */}
+            {moreView==="Together"&&(()=>{
+              const suggestions=REQ_SUGGESTIONS.filter(s=>s.cat===reqCat);
+              return(
+              <div>
+                <div style={{background:"linear-gradient(135deg,rgba(236,72,153,.18),rgba(124,58,237,.08))",border:"1px solid rgba(236,72,153,.3)",borderRadius:"var(--rl)",padding:18,textAlign:"center",marginBottom:16}}>
+                  <div style={{fontSize:40,marginBottom:6}}>💛</div>
+                  <div style={{fontFamily:"var(--fd)",fontSize:19,color:"#fff",marginBottom:6}}>Together Time</div>
+                  <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.6}}>Ask a grown-up to spend time with you, teach you something, or do something fun together. The best reward is time together! 🤗</div>
+                </div>
+
+                <div style={{fontSize:12,fontWeight:800,color:"#fff",marginBottom:8}}>1. What kind of together time? 👇</div>
+                <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:14}}>
+                  {REQ_CATS.map(c=>(<button key={c.id} onClick={()=>setReqCat(c.id)} style={{padding:"8px 12px",borderRadius:100,border:`2px solid ${reqCat===c.id?"rgba(236,72,153,.5)":"rgba(255,255,255,.14)"}`,background:reqCat===c.id?"rgba(236,72,153,.16)":"transparent",color:reqCat===c.id?"#fff":"rgba(255,255,255,.55)",fontSize:12,fontWeight:800,cursor:"pointer"}}>{c.icon} {c.label}</button>))}
+                </div>
+
+                <div style={{fontSize:12,fontWeight:800,color:"#fff",marginBottom:8}}>2. Pick one, or write your own 💭</div>
+                <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+                  {suggestions.map((s,i)=>(<button key={i} onClick={()=>setReqText(s.text)} style={{padding:"12px 14px",borderRadius:12,border:`1.5px solid ${reqText===s.text?"rgba(236,72,153,.5)":"rgba(255,255,255,.12)"}`,background:reqText===s.text?"rgba(236,72,153,.14)":"rgba(255,255,255,.05)",color:"#fff",fontFamily:"var(--fb)",fontSize:14,fontWeight:700,textAlign:"left",cursor:"pointer"}}>{reqCatOf(s.cat).icon} {s.text}</button>))}
+                </div>
+                <input value={reqText} onChange={e=>setReqText(e.target.value)} maxLength={120} placeholder="Or write your own idea…" style={{width:"100%",padding:"12px 13px",borderRadius:12,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:14,fontWeight:600,marginBottom:12,boxSizing:"border-box"}}/>
+                <button onClick={sendRequest} disabled={!reqText.trim()} style={{width:"100%",padding:14,borderRadius:14,border:"none",background:reqText.trim()?"linear-gradient(135deg,#ec4899,#db2777)":"rgba(255,255,255,.1)",color:reqText.trim()?"#fff":"rgba(255,255,255,.4)",fontFamily:"var(--fd)",fontSize:16,cursor:reqText.trim()?"pointer":"default"}}>💛 Ask my grown-up</button>
+                <div style={{textAlign:"center",fontSize:11,fontWeight:700,color:"rgba(255,255,255,.35)",marginTop:10,lineHeight:1.5}}>Grown-ups are busy sometimes — if they can't right away, they'll try to find another time. 💛</div>
               </div>
               );
             })()}
@@ -3434,8 +3484,11 @@ function ParentDash({kids,onResetKid,onLogout}){
   const [nLabel,setNLabel]=useState("");
   const [nEmoji,setNEmoji]=useState("🎁");
   const [nRecur,setNRecur]=useState("once");
+  const [nMoney,setNMoney]=useState(2);                 // pocket-money amount (tracking only)
   // New reward-store item
   const [sName,setSName]=useState(""); const [sEmoji,setSEmoji]=useState("🎁"); const [sCost,setSCost]=useState(50);
+  // Pocket-money ledger + Together Time
+  const [owed,setOwed]=useState({}); const [tt,setTt]=useState(false); const [requests,setRequests]=useState([]);
 
   // Load each kid's saved state to show real performance
   useEffect(()=>{ (async()=>{
@@ -3443,8 +3496,12 @@ function ParentDash({kids,onResetKid,onLogout}){
     for(const k of kids){ const st=await loadData(stateKey(k.id)); if(st) out[k.id]=st; }
     setKidStates(out);
   })(); },[kids]);
-  useEffect(()=>{ (async()=>{ setTasks(await loadTasks()); setStore(await loadStore()); setClaims(await loadClaims()); })(); },[]);
+  useEffect(()=>{ (async()=>{ setTasks(await loadTasks()); setStore(await loadStore()); setClaims(await loadClaims()); setOwed(await loadOwed()); setTt(!!(await loadSettings()).togetherTime); setRequests(await loadRequests()); })(); },[]);
   useEffect(()=>{ if(!nKid && kids.length) setNKid(kids[0].id); },[kids]);
+  const toggleTt=()=>{ const v=!tt; setTt(v); saveSettings({togetherTime:v}); };
+  const markPaid=(kidId)=>{ const o={...owed,[kidId]:0}; setOwed(o); saveOwed(o); };
+  const answerRequest=(id,status)=>{ const next=requests.map(r=>r.id===id?{...r,status}:r); setRequests(next); saveRequests(next); if(status==="yes"){ const r=requests.find(x=>x.id===id); try{ window.toyboxSync?.notify?.(`💛 You said YES to ${kidName(r?.kidId)}'s together-time wish: "${r?.text}". They'll be so happy!`); }catch(e){} } };
+  const delRequest=(id)=>{ const next=requests.filter(r=>r.id!==id); setRequests(next); saveRequests(next); };
 
   const kidTotal=(k)=>{ const st=kidStates[k.id]; if(!st) return k.cash||1000; return (st.lastValue ?? ((st.cash||0))); };
   const kidGain=(k)=>kidTotal(k)-1000;
@@ -3452,7 +3509,9 @@ function ParentDash({kids,onResetKid,onLogout}){
 
   const assignTask=()=>{
     const title=nTitle.trim(); if(!title||!nKid) return;
-    const reward=nType==="coins"?{type:"coins",coins:Math.max(1,+nCoins||1)}:{type:"custom",label:nLabel.trim()||"a reward",emoji:nEmoji||"🎁"};
+    const reward=nType==="coins"?{type:"coins",coins:Math.max(1,+nCoins||1)}
+      :nType==="money"?{type:"money",money:Math.max(0.5,+nMoney||1)}
+      :{type:"custom",label:nLabel.trim()||"a reward",emoji:nEmoji||"🎁"};
     const t={id:uid(),kidId:nKid,title,cat:nCat,reward,recurring:nRecur,status:"todo",createdAt:Date.now()};
     const next=[t,...tasks]; setTasks(next); saveTasks(next);
     setNTitle(""); setNLabel("");
@@ -3627,6 +3686,21 @@ function ParentDash({kids,onResetKid,onLogout}){
               </div>
             )}
 
+            {/* Pocket-money ledger (tracking only) */}
+            {kids.some(k=>(owed[k.id]||0)>0)&&(
+              <div style={{background:"rgba(16,185,129,.08)",border:"1px solid rgba(16,185,129,.25)",borderRadius:16,padding:15,marginBottom:16}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#86efac",marginBottom:3}}>💵 Pocket money to pay</div>
+                <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)",lineHeight:1.5,marginBottom:11}}>The app only tracks this — pay your child directly, then tap “Paid”.</div>
+                {kids.filter(k=>(owed[k.id]||0)>0).map(k=>(
+                  <div key={k.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0"}}>
+                    <span style={{fontSize:22}}>{k.avatar}</span>
+                    <div style={{flex:1}}><div style={{fontSize:14,fontWeight:800,color:"#fff"}}>{k.name}</div><div style={{fontFamily:"var(--fd)",fontSize:15,color:"#86efac"}}>{f$(owed[k.id])}</div></div>
+                    <button onClick={()=>markPaid(k.id)} style={{padding:"8px 14px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#10b981,#059669)",color:"#fff",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>✓ Paid</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Assign a task */}
             <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:15,marginBottom:16}}>
               <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:12}}>➕ Give a task</div>
@@ -3644,13 +3718,23 @@ function ParentDash({kids,onResetKid,onLogout}){
                 {TASK_CATS.map(c=>(<button key={c.id} onClick={()=>setNCat(c.id)} style={{padding:"6px 11px",borderRadius:100,border:`1.5px solid ${nCat===c.id?"rgba(124,58,237,.5)":"rgba(255,255,255,.14)"}`,background:nCat===c.id?"rgba(124,58,237,.16)":"transparent",color:nCat===c.id?"#fff":"rgba(255,255,255,.5)",fontSize:11,fontWeight:800,cursor:"pointer"}}>{c.icon} {c.label}</button>))}
               </div>
               <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.45)",marginBottom:6}}>REWARD</div>
-              <div style={{display:"flex",gap:7,marginBottom:8}}>
-                <button onClick={()=>setNType("coins")} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${nType==="coins"?"rgba(245,158,11,.5)":"rgba(255,255,255,.14)"}`,background:nType==="coins"?"rgba(245,158,11,.14)":"transparent",color:nType==="coins"?"#fde68a":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>🪙 Coins</button>
-                <button onClick={()=>setNType("custom")} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${nType==="custom"?"rgba(124,58,237,.5)":"rgba(255,255,255,.14)"}`,background:nType==="custom"?"rgba(124,58,237,.14)":"transparent",color:nType==="custom"?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>🎁 Custom</button>
+              <div style={{display:"flex",gap:6,marginBottom:8}}>
+                <button onClick={()=>setNType("coins")} style={{flex:1,padding:"9px 4px",borderRadius:10,border:`1.5px solid ${nType==="coins"?"rgba(245,158,11,.5)":"rgba(255,255,255,.14)"}`,background:nType==="coins"?"rgba(245,158,11,.14)":"transparent",color:nType==="coins"?"#fde68a":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>🪙 Coins</button>
+                <button onClick={()=>setNType("money")} style={{flex:1,padding:"9px 4px",borderRadius:10,border:`1.5px solid ${nType==="money"?"rgba(16,185,129,.5)":"rgba(255,255,255,.14)"}`,background:nType==="money"?"rgba(16,185,129,.14)":"transparent",color:nType==="money"?"#86efac":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>💵 Money</button>
+                <button onClick={()=>setNType("custom")} style={{flex:1,padding:"9px 4px",borderRadius:10,border:`1.5px solid ${nType==="custom"?"rgba(124,58,237,.5)":"rgba(255,255,255,.14)"}`,background:nType==="custom"?"rgba(124,58,237,.14)":"transparent",color:nType==="custom"?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>🎁 Custom</button>
               </div>
               {nType==="coins"?(
                 <div style={{display:"flex",gap:7,marginBottom:12}}>
                   {[10,20,50,100].map(n=>(<button key={n} onClick={()=>setNCoins(n)} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${nCoins===n?"rgba(245,158,11,.5)":"rgba(255,255,255,.14)"}`,background:nCoins===n?"rgba(245,158,11,.14)":"transparent",color:nCoins===n?"#fde68a":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>{n}</button>))}
+                </div>
+              ):nType==="money"?(
+                <div style={{marginBottom:12}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                    <span style={{fontFamily:"var(--fd)",fontSize:18,color:"#86efac"}}>$</span>
+                    <input value={nMoney} onChange={e=>setNMoney(e.target.value.replace(/[^\d.]/g,""))} inputMode="decimal" style={{flex:1,padding:"10px 12px",borderRadius:11,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,boxSizing:"border-box"}}/>
+                    <div style={{display:"flex",gap:5}}>{[1,2,5].map(n=>(<button key={n} onClick={()=>setNMoney(n)} style={{padding:"8px 10px",borderRadius:9,border:"1px solid rgba(16,185,129,.3)",background:"rgba(16,185,129,.1)",color:"#86efac",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>${n}</button>))}</div>
+                  </div>
+                  <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.4)",lineHeight:1.5}}>💡 The app only <strong style={{color:"rgba(255,255,255,.6)"}}>keeps track</strong> of this pocket money — it never moves real money. You pay your child directly, however you like. This is family allowance, not a job.</div>
                 </div>
               ):(
                 <div style={{display:"flex",gap:7,marginBottom:12}}>
@@ -3696,6 +3780,38 @@ function ParentDash({kids,onResetKid,onLogout}){
                 <input value={sCost} onChange={e=>setSCost(e.target.value.replace(/\D/g,""))} inputMode="numeric" style={{width:60,padding:"10px",borderRadius:10,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:14,textAlign:"center",boxSizing:"border-box"}}/>
               </div>
               <button onClick={addStoreItem} disabled={!sName.trim()} style={{width:"100%",marginTop:8,padding:11,borderRadius:11,border:"none",background:sName.trim()?"rgba(124,58,237,.3)":"rgba(255,255,255,.08)",color:sName.trim()?"#fff":"rgba(255,255,255,.4)",fontFamily:"var(--fd)",fontSize:13,cursor:sName.trim()?"pointer":"default"}}>+ Add reward</button>
+            </div>
+
+            {/* Together Time — kids ask parents for shared time (toggle) */}
+            <div style={{background:"rgba(236,72,153,.08)",border:"1px solid rgba(236,72,153,.25)",borderRadius:16,padding:15,marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>💛 Together Time</div>
+                  <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.55)",lineHeight:1.5,marginTop:2}}>Let your kids ask you to spend time together, teach them something, or do a fun activity. Builds your bond — no coins involved.</div>
+                </div>
+                <button onClick={toggleTt} aria-label="Toggle Together Time" style={{flexShrink:0,width:54,height:30,borderRadius:100,border:"none",background:tt?"#ec4899":"rgba(255,255,255,.15)",position:"relative",cursor:"pointer",transition:"background .2s"}}>
+                  <span style={{position:"absolute",top:3,left:tt?27:3,width:24,height:24,borderRadius:"50%",background:"#fff",transition:"left .2s"}}/>
+                </button>
+              </div>
+              {!tt&&<div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.4)",marginTop:6}}>Turn this on to let your kids send you together-time wishes. 💛</div>}
+              {tt&&(<>
+                {requests.filter(r=>r.status!=="done").length===0
+                  ?<div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.5)",marginTop:10,textAlign:"center",lineHeight:1.5}}>It's on! When your kids send a wish, it'll show up here. 🤗</div>
+                  :requests.filter(r=>r.status!=="done").map(r=>(
+                    <div key={r.id} style={{background:"rgba(255,255,255,.05)",borderRadius:12,padding:12,marginTop:10}}>
+                      <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:2}}>{reqCatOf(r.cat).icon} {r.text}</div>
+                      <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)",marginBottom:10}}>from {kidName(r.kidId)}{r.status==="yes"?" · you said yes 💛":""}</div>
+                      <div style={{display:"flex",gap:8}}>
+                        {r.status==="asked"?(<>
+                          <button onClick={()=>answerRequest(r.id,"yes")} style={{flex:1,padding:"9px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#ec4899,#db2777)",color:"#fff",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>💛 Yes!</button>
+                          <button onClick={()=>delRequest(r.id)} style={{flex:1,padding:"9px",borderRadius:10,border:"1px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.6)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>Maybe later</button>
+                        </>):(
+                          <button onClick={()=>answerRequest(r.id,"done")} style={{flex:1,padding:"9px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#10b981,#059669)",color:"#fff",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>✓ We did it together!</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </>)}
             </div>
           </>)}
         </>)}

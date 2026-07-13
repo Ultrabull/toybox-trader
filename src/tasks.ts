@@ -3,7 +3,9 @@
 // device sees them (synced through Neon when signed in). No real money: rewards
 // are in-app coins or parent-defined custom rewards (toys, screen time, outings).
 
-export type Reward = { type: "coins" | "custom"; coins?: number; label?: string; emoji?: string };
+// "money" is POCKET-MONEY only: the app tracks an amount the parent chooses to
+// owe, and never moves any real money. Parents settle it in real life.
+export type Reward = { type: "coins" | "custom" | "money"; coins?: number; label?: string; emoji?: string; money?: number };
 export type TaskStatus = "todo" | "pending" | "approved" | "done";
 export type Task = {
   id: string;
@@ -58,6 +60,45 @@ export const loadStore = () => load<StoreItem[]>(STORE_KEY, []);
 export const saveStore = (s: StoreItem[]) => save(STORE_KEY, s);
 export const loadClaims = () => load<Claim[]>(CLAIMS_KEY, []);
 export const saveClaims = (c: Claim[]) => save(CLAIMS_KEY, c);
+
+// Pocket-money ledger — a per-kid running total the parent owes. TRACKING ONLY;
+// the app never moves money. { [kidId]: amount }.
+const OWED_KEY = "toybox:pocketmoney:v1";
+export const loadOwed = () => load<Record<string, number>>(OWED_KEY, {});
+export const saveOwed = (o: Record<string, number>) => save(OWED_KEY, o);
+
+// Family settings (e.g., whether kids can send "Together Time" requests).
+export type Settings = { togetherTime: boolean };
+const SETTINGS_KEY = "toybox:family:settings";
+export const loadSettings = () => load<Settings>(SETTINGS_KEY, { togetherTime: false });
+export const saveSettings = (s: Settings) => save(SETTINGS_KEY, s);
+
+// Together Time — kids ASK parents for time/teaching/activities (relationship
+// building, not chores). No coins; the reward is the shared time itself.
+export type Request = { id: string; kidId: string; text: string; cat: string; status: "asked" | "yes" | "done"; createdAt: number };
+const REQUESTS_KEY = "toybox:togethertime:v1";
+export const loadRequests = () => load<Request[]>(REQUESTS_KEY, []);
+export const saveRequests = (r: Request[]) => save(REQUESTS_KEY, r);
+
+export const REQ_CATS = [
+  { id: "together", icon: "🤝", label: "Do together" },
+  { id: "teach", icon: "🧠", label: "Teach me" },
+  { id: "time", icon: "⏰", label: "Time together" },
+  { id: "story", icon: "📚", label: "Read / story" },
+  { id: "go", icon: "🏞️", label: "Go somewhere" },
+];
+export const reqCatOf = (id: string) => REQ_CATS.find((c) => c.id === id) || REQ_CATS[0];
+export const REQ_SUGGESTIONS = [
+  { cat: "together", text: "Build a Lego set with me" },
+  { cat: "together", text: "Play a board game with me" },
+  { cat: "together", text: "Draw or paint together" },
+  { cat: "teach", text: "Teach me to cook something yummy" },
+  { cat: "teach", text: "Show me how to ride a bike" },
+  { cat: "teach", text: "Help me with my project" },
+  { cat: "time", text: "Just hang out and chat with me" },
+  { cat: "story", text: "Read me a bedtime story" },
+  { cat: "go", text: "Take me to the park" },
+];
 
 export const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
 
