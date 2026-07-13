@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { apiUrl } from "./src/api";
+import BuildDemo from "./src/BuildDemo";
 
 // ─── Constants ─────────────────────────────────────
 const AVATARS = ["🚀","🦁","⚡","🐉","🦊","🐼","🦋","🎮","🏆","🌟","🦅","🐯","🐬","🦄","🐸","🎸","🧙","🎯","🐺","🦈"];
@@ -754,6 +755,11 @@ export default function ToyboxApp() {
     const s=Array.from({length:20},(_,i)=>({id:i,sz:`${1+Math.random()*2}px`,top:`${Math.random()*100}%`,left:`${Math.random()*100}%`,dur:`${3+Math.random()*5}s`,del:`${Math.random()*5}s`}));
     return <div className="stars">{s.map(x=><div key={x.id} className="star" style={{width:x.sz,height:x.sz,top:x.top,left:x.left,animationDuration:x.dur,animationDelay:x.del}}/>)}</div>;
   };
+
+  // Prototype: open /?build to feel the isometric room-builder (no login).
+  if (typeof location !== "undefined" && new URLSearchParams(location.search).has("build")) {
+    return <BuildDemo/>;
+  }
 
   return (
     <>
