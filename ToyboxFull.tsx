@@ -3752,7 +3752,7 @@ function ParentDash({kids,onResetKid,onLogout}){
             {[["perf","📊 Kids"],["tasks","✅ Tasks"],["report","📈 Report"]].map(([k,l])=>(
               <button key={k} onClick={()=>setPv(k)} style={{position:"relative",flex:1,padding:"9px 4px",borderRadius:11,border:`1.5px solid ${pv===k?"rgba(16,185,129,.5)":"rgba(255,255,255,.14)"}`,background:pv===k?"rgba(16,185,129,.16)":"transparent",color:pv===k?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>{l}
                 {k==="tasks"&&attention>0&&(
-                  <span style={{position:"absolute",top:-7,right:-6,minWidth:20,height:20,padding:"0 5px",borderRadius:100,background:"#ef4444",color:"#fff",fontFamily:"var(--fd)",fontSize:11,lineHeight:"20px",boxShadow:"0 2px 6px rgba(239,68,68,.5)",border:"2px solid #052e16",boxSizing:"border-box"}}>{attention>9?"9+":attention}</span>
+                  <span onClick={e=>{e.stopPropagation();setPv("tasks");}} title={`${attention} thing${attention>1?"s":""} need your attention`} style={{position:"absolute",top:-7,right:-6,minWidth:20,height:20,padding:"0 5px",borderRadius:100,background:"#ef4444",color:"#fff",fontFamily:"var(--fd)",fontSize:11,lineHeight:"20px",boxShadow:"0 2px 6px rgba(239,68,68,.5)",border:"2px solid #052e16",boxSizing:"border-box",cursor:"pointer"}}>{attention>9?"9+":attention}</span>
                 )}
               </button>
             ))}
