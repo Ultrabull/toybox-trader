@@ -1786,7 +1786,6 @@ function KidDash({user,savedState,onLogout}){
     {id:"Club",    icon:"🤝",label:"Club"},
     {id:"Report",  icon:"📊",label:"Report"},
     {id:"Backup",  icon:"💾",label:"Backup"},
-    {id:"Help",    icon:"🆘",label:"Get Help"},
   ];
 
   return(
@@ -2646,7 +2645,7 @@ function KidDash({user,savedState,onLogout}){
             {moreView==="Help"&&(
               <div>
                 <div style={{background:"linear-gradient(135deg,rgba(16,185,129,.15),rgba(6,182,212,.08))",border:"1px solid rgba(16,185,129,.3)",borderRadius:"var(--rl)",padding:18,textAlign:"center",marginBottom:16}}>
-                  <div style={{fontSize:38,marginBottom:6}}>🆘</div>
+                  <div style={{fontSize:38,marginBottom:6}}>🐞</div>
                   <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff",marginBottom:6}}>Something not working?</div>
                   <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.7)",lineHeight:1.6}}>Tell us what's wrong and our team will fix it. Your message goes straight to the grown-ups at Toybox! 💚</div>
                 </div>
@@ -2699,6 +2698,13 @@ function KidDash({user,savedState,onLogout}){
           </button>
         ))}
       </nav>
+
+      {/* Floating "report a problem" ladybug — stacks above the ☁️/🔔 buttons.
+          Opens the kid-friendly Get Help form. Hidden during the first-run tour. */}
+      {tourDone&&(
+        <button onClick={()=>{setBugState("idle");setMoreView("Help");setNav("More");}} title="Report a problem" aria-label="Report a problem"
+          style={{position:"fixed",bottom:118,right:14,zIndex:2147483000,width:44,height:44,borderRadius:"50%",border:"none",cursor:"pointer",background:"rgba(20,16,40,.72)",color:"#fff",fontSize:22,lineHeight:"44px",boxShadow:"0 4px 16px rgba(0,0,0,.4)",backdropFilter:"blur(6px)",opacity:.9,padding:0}}>🐞</button>
+      )}
 
       {/* More drawer */}
       {moreOpen&&(
