@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { apiUrl } from "./src/api";
 import BuildDemo from "./src/BuildDemo";
+const Build3D = lazy(() => import("./src/Build3D"));
 
 // ─── Constants ─────────────────────────────────────
 const AVATARS = ["🚀","🦁","⚡","🐉","🦊","🐼","🦋","🎮","🏆","🌟","🦅","🐯","🐬","🦄","🐸","🎸","🧙","🎯","🐺","🦈"];
@@ -756,9 +757,11 @@ export default function ToyboxApp() {
     return <div className="stars">{s.map(x=><div key={x.id} className="star" style={{width:x.sz,height:x.sz,top:x.top,left:x.left,animationDuration:x.dur,animationDelay:x.del}}/>)}</div>;
   };
 
-  // Prototype: open /?build to feel the isometric room-builder (no login).
-  if (typeof location !== "undefined" && new URLSearchParams(location.search).has("build")) {
-    return <BuildDemo/>;
+  // Prototypes (no login): /?build = isometric room, /?build3d = true 3D voxels.
+  if (typeof location !== "undefined") {
+    const q = new URLSearchParams(location.search);
+    if (q.has("build3d")) return <Suspense fallback={<div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#87b7e8",color:"#0d2a4a",fontFamily:"'Fredoka One',cursive",fontSize:18}}>🧊 Loading 3D…</div>}><Build3D/></Suspense>;
+    if (q.has("build")) return <BuildDemo/>;
   }
 
   return (
