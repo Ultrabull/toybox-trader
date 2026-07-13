@@ -3693,6 +3693,8 @@ function ParentDash({kids,onResetKid,onLogout}){
   const [allowance,setAllowance]=useState({}); const [members,setMembers]=useState([]);
   const [mName,setMName]=useState(""); const [mEmoji,setMEmoji]=useState("👵");
   const [giftFrom,setGiftFrom]=useState(""); const [giftKid,setGiftKid]=useState(""); const [giftCoins,setGiftCoins]=useState(20); const [giftMsg,setGiftMsg]=useState("");
+  // Collapsible sections keep the Tasks tab short — open only what you need.
+  const [showStore,setShowStore]=useState(false); const [showExtras,setShowExtras]=useState(false);
 
   // Load each kid's saved state to show real performance
   useEffect(()=>{ (async()=>{
@@ -3972,9 +3974,16 @@ function ParentDash({kids,onResetKid,onLogout}){
               </div>
             )}
 
-            {/* Reward store editor */}
+            {/* Reward store editor — collapsible */}
             <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:15,marginBottom:16}}>
-              <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>🎁 Reward Store</div>
+              <button onClick={()=>setShowStore(s=>!s)} style={{width:"100%",display:"flex",alignItems:"center",gap:8,background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left"}}>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>🎁 Reward Store {store.length>0&&<span style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.4)"}}>· {store.length}</span>}</div>
+                  <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)",marginTop:2}}>Things kids buy with saved coins</div>
+                </div>
+                <span style={{fontSize:14,color:"rgba(255,255,255,.5)",transform:showStore?"rotate(180deg)":"none",transition:"transform .2s"}}>▾</span>
+              </button>
+              {showStore&&(<div style={{marginTop:12}}>
               <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",lineHeight:1.5,marginBottom:12}}>Add rewards kids can buy with saved coins (a toy, screen time, an outing). You give the real reward when they redeem it.</div>
               {store.map(it=>(
                 <div key={it.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,.05)",borderRadius:11,padding:"9px 11px",marginBottom:7}}>
@@ -3989,7 +3998,19 @@ function ParentDash({kids,onResetKid,onLogout}){
                 <input value={sCost} onChange={e=>setSCost(e.target.value.replace(/\D/g,""))} inputMode="numeric" style={{width:60,padding:"10px",borderRadius:10,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:14,textAlign:"center",boxSizing:"border-box"}}/>
               </div>
               <button onClick={addStoreItem} disabled={!sName.trim()} style={{width:"100%",marginTop:8,padding:11,borderRadius:11,border:"none",background:sName.trim()?"rgba(124,58,237,.3)":"rgba(255,255,255,.08)",color:sName.trim()?"#fff":"rgba(255,255,255,.4)",fontFamily:"var(--fd)",fontSize:13,cursor:sName.trim()?"pointer":"default"}}>+ Add reward</button>
+              </div>)}
             </div>
+
+            {/* More Family Tools — collapsible group for bonding + Plus features */}
+            <button onClick={()=>setShowExtras(s=>!s)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:15,marginBottom:16,cursor:"pointer",textAlign:"left"}}>
+              <span style={{fontSize:22}}>⭐</span>
+              <div style={{flex:1}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>More Family Tools</div>
+                <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)",marginTop:2}}>Together Time, Savings Match, Allowance & Family Circle</div>
+              </div>
+              <span style={{fontSize:14,color:"rgba(255,255,255,.5)",transform:showExtras?"rotate(180deg)":"none",transition:"transform .2s"}}>▾</span>
+            </button>
+            {showExtras&&(<>
 
             {/* Together Time — kids ask parents for shared time (toggle) */}
             <div style={{background:"rgba(236,72,153,.08)",border:"1px solid rgba(236,72,153,.25)",borderRadius:16,padding:15,marginBottom:16}}>
@@ -4119,6 +4140,7 @@ function ParentDash({kids,onResetKid,onLogout}){
                 )}
               </>)}
             </div>
+            </>)}
           </>)}
         </>)}
 
