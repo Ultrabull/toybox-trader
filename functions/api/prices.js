@@ -35,20 +35,11 @@ async function yahooOne(sym) {
 async function fetchStocks() {
   const prices = {};
   const prev = {};
-  const results = await Promise.allSettled(STOCKS.map(yahooOne));
-  let got = 0;
-  results.forEach((res, i) => {
-    if (res.status === "fulfilled") {
-      prices[STOCKS[i]] = res.value.price;
-      prev[STOCKS[i]] = res.value.prev;
-      got++;
-    }
-  });
-  if (got === STOCKS.length) return { prices, prev, source: "yahoo" };
+  // 1) Stooq first — a plain CSV feed that works reliably from Cloudflare's
+  //    edge, whereas Yahoo often 403/429s datacenter IPs.
   try {
-    const missing = STOCKS.filter((s) => !(s in prices));
-    const symbols = missing.map((s) => s.toLowerCase() + ".us").join(",");
-    const r = await fetch(`https://stooq.com/q/l/?s=${symbols}&f=sd2t2ohlc&h&e=csv`);
+    const symbols = STOCKS.map((s) => s.toLowerCase() + ".us").join(",");
+    const r = await fetch(`https://stooq.com/q/l/?s=${symbols}&f=sd2t2ohlc&h&e=csv`, { headers: { "user-agent": UA } });
     if (r.ok) {
       const text = await r.text();
       for (const line of text.trim().split("\n").slice(1)) {
@@ -63,8 +54,21 @@ async function fetchStocks() {
       }
     }
   } catch {}
+  const stooqGot = Object.keys(prices).length;
+  // 2) Yahoo fills any gaps Stooq missed (real-time when it works).
+  const missing = STOCKS.filter((s) => !(s in prices));
+  if (missing.length) {
+    const results = await Promise.allSettled(missing.map(yahooOne));
+    results.forEach((res, i) => {
+      if (res.status === "fulfilled") {
+        prices[missing[i]] = res.value.price;
+        prev[missing[i]] = res.value.prev;
+      }
+    });
+  }
   const n = Object.keys(prices).length;
-  return { prices, prev, source: n === 0 ? "none" : got > 0 ? "yahoo+stooq" : "stooq" };
+  const source = n === 0 ? "none" : stooqGot === STOCKS.length ? "stooq" : stooqGot === 0 ? "yahoo" : "stooq+yahoo";
+  return { prices, prev, source };
 }
 
 async function fetchCrypto() {
