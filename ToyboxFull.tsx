@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { apiUrl } from "./src/api";
+import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets } from "./src/tasks";
 
 // ─── Constants ─────────────────────────────────────
 const AVATARS = ["🚀","🦁","⚡","🐉","🦊","🐼","🦋","🎮","🏆","🌟","🦅","🐯","🐬","🦄","🐸","🎸","🧙","🎯","🐺","🦈"];
@@ -1053,6 +1054,12 @@ function KidDash({user,savedState,onLogout}){
   const [orderToast,  setOrderToast]  = useState(null);                          // "order filled!" toast
   const [success,     setSuccess]     = useState(null);
   const [cashReward,  setCashReward]  = useState(null);                          // lesson cash pop
+  // Chores & Rewards (family-shared tasks/store; no real money)
+  const [tasks,       setTasks]       = useState([]);
+  const [store,       setStore]       = useState([]);
+  const [choreGoal,   setChoreGoal]   = useState(0);
+  const [taskCelebrate,setTaskCelebrate]=useState(null);                         // {emoji,title,coins?}
+  const [investOpen,  setInvestOpen]  = useState(false);
   const [lesson,       setLesson]      = useState(null);   // lesson modal
   const [lessonSlide,  setLessonSlide] = useState(0);
   const [lessonProgress,setLessonProg]= useState({});     // saved progress per lesson
@@ -1296,6 +1303,39 @@ function KidDash({user,savedState,onLogout}){
     }catch(e){setPriceSource("simulated");}
   };
   useEffect(()=>{fetchRealPrices();const id=setInterval(fetchRealPrices,60000);return()=>clearInterval(id);},[]);
+
+  // ── Chores & Rewards ──
+  const refreshTasks = async () => {
+    const t = applyRecurringResets(await loadTasks());
+    setTasks(t); saveTasks(t);
+    setStore(await loadStore());
+  };
+  useEffect(()=>{ (async()=>{ await refreshTasks(); const g=await loadData(`toybox:choregoal:${user?.id}`); if(g) setChoreGoal(g); })(); },[]);
+  // Re-check for parent approvals whenever the Tasks view opens.
+  useEffect(()=>{ if(nav==="More"&&moreView==="Tasks") refreshTasks(); },[nav,moreView]);
+  const myTasks = tasks.filter(t=>t.kidId===user?.id);
+  const todoCount = myTasks.filter(t=>t.status==="todo").length;
+
+  const markTaskDone = (task) => {
+    const next = tasks.map(t=>t.id===task.id?{...t,status:"pending",doneAt:Date.now()}:t);
+    setTasks(next); saveTasks(next); fx("correct",12);
+    try{ window.toyboxSync?.notify?.(`✅ ${user?.name||"Your child"} finished a task: "${task.title}". Open Toybox Trader → 👔 Parent to approve it.`); }catch(e){}
+  };
+  const collectTask = (task) => {
+    const next = tasks.map(t=>t.id===task.id?{...t,status:"done",lastDone:new Date().toDateString()}:t);
+    setTasks(next); saveTasks(next);
+    if(task.reward.type==="coins"){ setCoins(c=>c+(task.reward.coins||0)); fx("reward",30); setTaskCelebrate({emoji:"🪙",title:task.title,coins:task.reward.coins||0}); }
+    else { fx("reward",30); setTaskCelebrate({emoji:task.reward.emoji||"🎁",title:task.title,label:task.reward.label}); }
+  };
+  const redeemStoreItem = (item) => {
+    if(coins < item.cost) return;
+    setCoins(c=>c-item.cost);
+    (async()=>{ const claims=await loadClaims(); claims.unshift({id:uid(),kidId:user?.id,itemName:item.name,emoji:item.emoji,cost:item.cost,at:Date.now()}); await saveClaims(claims); })();
+    try{ window.toyboxSync?.notify?.(`🎁 ${user?.name||"Your child"} redeemed "${item.emoji} ${item.name}" for ${item.cost} coins. Time to give the reward!`); }catch(e){}
+    fx("reward",25); setTaskCelebrate({emoji:item.emoji,title:`Redeemed ${item.name}!`,label:"Ask your grown-up for your reward 🎉"});
+  };
+  const saveChoreGoal = (g) => { setChoreGoal(g); saveData(`toybox:choregoal:${user?.id}`, g); };
+  const investCoins = (n) => { if(n<=0||n>coins) return; setCoins(c=>c-n); setCash(c=>c+n); fx("reward",20); setInvestOpen(false); setTaskCelebrate({emoji:"📈",title:`${n} coins → ${fs$(n)} trading cash!`,label:"Go to Trade to grow it into more!"}); };
 
   // Neutral random-walk simulation between fetches (no fake upward drift)
   useEffect(()=>{
@@ -1812,6 +1852,7 @@ function KidDash({user,savedState,onLogout}){
   const reportGrade=weekStats.gainPct>=10?"A+":weekStats.gainPct>=5?"A":weekStats.gainPct>=0?"B":weekStats.gainPct>=-5?"C":"D";
 
   const MORE_ITEMS=[
+    {id:"Tasks",   icon:"✅",label:"My Tasks"},
     {id:"Shop",    icon:"🛍️",label:"Shop"},
     {id:"Badges",  icon:"🏅",label:"Badges"},
     {id:"Performance",icon:"📈",label:"P&L"},
@@ -2227,6 +2268,115 @@ function KidDash({user,savedState,onLogout}){
             <button onClick={()=>setNav("Home")} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.12)",borderRadius:100,padding:"7px 14px",color:"rgba(255,255,255,.65)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer",marginBottom:14}}>
               ← Back to Home
             </button>
+
+            {/* MY TASKS — chores & rewards */}
+            {moreView==="Tasks"&&(()=>{
+              const ready=myTasks.filter(t=>t.status==="approved");
+              const todo=myTasks.filter(t=>t.status==="todo");
+              const pending=myTasks.filter(t=>t.status==="pending");
+              const doneList=myTasks.filter(t=>t.status==="done");
+              return(
+              <div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff"}}>✅ My Tasks</div>
+                  <div style={{background:"rgba(245,158,11,.15)",border:"1px solid rgba(245,158,11,.3)",borderRadius:100,padding:"5px 12px",fontFamily:"var(--fd)",fontSize:14,color:"#fde68a"}}>🪙 {coins}</div>
+                </div>
+                <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,marginBottom:14}}>Do the tasks your grown-up gave you, tap <strong style={{color:"#fff"}}>“I did it!”</strong>, and earn coins &amp; rewards! 🎉</div>
+
+                {myTasks.length===0&&store.length===0&&(
+                  <div style={{background:"rgba(255,255,255,.05)",border:"1px dashed rgba(255,255,255,.18)",borderRadius:16,padding:22,textAlign:"center"}}>
+                    <div style={{fontSize:40,marginBottom:8}}>📋</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:6}}>No tasks yet!</div>
+                    <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",lineHeight:1.5}}>Ask a grown-up to open Toybox → 👔 <strong style={{color:"#fff"}}>Parent</strong> and give you some tasks. They'll pop up here! ✨</div>
+                  </div>
+                )}
+
+                {/* Ready to collect */}
+                {ready.length>0&&<div style={{fontSize:12,fontWeight:800,color:"#86efac",marginBottom:8}}>🎉 Ready to collect!</div>}
+                {ready.map(t=>(
+                  <div key={t.id} style={{background:"rgba(16,185,129,.12)",border:"1px solid rgba(16,185,129,.4)",borderRadius:14,padding:13,marginBottom:9}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:9}}>
+                      <span style={{fontSize:22}}>{catOf(t.cat).icon}</span>
+                      <div style={{flex:1}}><div style={{fontSize:14,fontWeight:800,color:"#fff"}}>{t.title}</div><div style={{fontSize:11,fontWeight:700,color:"#86efac"}}>Approved by your grown-up ✓</div></div>
+                    </div>
+                    <button onClick={()=>collectTask(t)} style={{width:"100%",padding:11,borderRadius:11,border:"none",background:"linear-gradient(135deg,#10b981,#059669)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>{t.reward.type==="coins"?`🎉 Collect ${t.reward.coins} coins!`:`🎁 Collect: ${t.reward.emoji||"🎁"} ${t.reward.label||"reward"}`}</button>
+                  </div>
+                ))}
+
+                {/* To do */}
+                {todo.length>0&&<div style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,.55)",margin:"6px 0 8px"}}>📋 To do ({todo.length})</div>}
+                {todo.map(t=>(
+                  <div key={t.id} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:14,padding:13,marginBottom:9}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:9}}>
+                      <span style={{fontSize:22}}>{catOf(t.cat).icon}</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:14,fontWeight:800,color:"#fff"}}>{t.title}</div>
+                        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)"}}>{catOf(t.cat).label}{t.recurring!=="once"?` · ${t.recurring}`:""} · reward: {t.reward.type==="coins"?`🪙 ${t.reward.coins}`:`${t.reward.emoji||"🎁"} ${t.reward.label||""}`}</div>
+                      </div>
+                    </div>
+                    <button onClick={()=>markTaskDone(t)} style={{width:"100%",padding:11,borderRadius:11,border:"none",background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>✋ I did it!</button>
+                  </div>
+                ))}
+
+                {/* Waiting */}
+                {pending.map(t=>(
+                  <div key={t.id} style={{background:"rgba(245,158,11,.08)",border:"1px solid rgba(245,158,11,.25)",borderRadius:14,padding:"11px 13px",marginBottom:9,display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:20}}>⏳</span>
+                    <div style={{flex:1}}><div style={{fontSize:13,fontWeight:800,color:"#fff"}}>{t.title}</div><div style={{fontSize:11,fontWeight:700,color:"#fde68a"}}>Waiting for your grown-up to check it…</div></div>
+                  </div>
+                ))}
+
+                {/* Grow coins — invest into trading */}
+                {coins>0&&(
+                  <div style={{background:"linear-gradient(135deg,rgba(16,185,129,.12),rgba(6,182,212,.06))",border:"1px solid rgba(16,185,129,.3)",borderRadius:16,padding:15,margin:"14px 0"}}>
+                    <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff",marginBottom:5}}>💰 Grow your coins!</div>
+                    <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.7)",lineHeight:1.5,marginBottom:investOpen?12:0}}>Turn coins you earned into <strong style={{color:"#fff"}}>trading cash</strong> and grow them by investing! 📈</div>
+                    {!investOpen
+                      ?<button onClick={()=>setInvestOpen(true)} style={{width:"100%",marginTop:11,padding:11,borderRadius:11,border:"none",background:"linear-gradient(135deg,#10b981,#059669)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>Invest my coins →</button>
+                      :<div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                        {[10,25,50].filter(n=>n<=coins).map(n=>(
+                          <button key={n} onClick={()=>investCoins(n)} style={{flex:1,minWidth:70,padding:"10px",borderRadius:10,border:"1px solid rgba(16,185,129,.4)",background:"rgba(16,185,129,.15)",color:"#86efac",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>{n} 🪙</button>
+                        ))}
+                        <button onClick={()=>investCoins(coins)} style={{flex:1,minWidth:70,padding:"10px",borderRadius:10,border:"1px solid rgba(16,185,129,.4)",background:"rgba(16,185,129,.15)",color:"#86efac",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>All {coins} 🪙</button>
+                        <button onClick={()=>setInvestOpen(false)} style={{width:"100%",padding:"8px",borderRadius:10,border:"none",background:"transparent",color:"rgba(255,255,255,.4)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Cancel</button>
+                      </div>}
+                  </div>
+                )}
+
+                {/* Goal jar */}
+                <div style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",borderRadius:16,padding:15,marginBottom:14}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff",marginBottom:8}}>🫙 Coin Goal Jar</div>
+                  {choreGoal>0?(<>
+                    <div style={{height:12,borderRadius:100,background:"rgba(255,255,255,.1)",overflow:"hidden",marginBottom:6}}><div style={{height:"100%",width:`${Math.min(100,Math.round(coins/choreGoal*100))}%`,background:"linear-gradient(90deg,#f59e0b,#fbbf24)",transition:"width .4s"}}/></div>
+                    <div style={{fontSize:12,fontWeight:800,color:coins>=choreGoal?"#86efac":"rgba(255,255,255,.6)"}}>{coins} / {choreGoal} coins {coins>=choreGoal?"— goal reached! 🎉":`· ${choreGoal-coins} to go!`}</div>
+                    <button onClick={()=>saveChoreGoal(0)} style={{marginTop:8,background:"none",border:"none",color:"rgba(255,255,255,.35)",fontSize:11,fontWeight:700,cursor:"pointer"}}>Change goal</button>
+                  </>):(
+                    <div style={{display:"flex",gap:7}}>
+                      {[50,100,200].map(g=>(<button key={g} onClick={()=>saveChoreGoal(g)} style={{flex:1,padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>{g} 🪙</button>))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Reward store */}
+                {store.length>0&&(<>
+                  <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:8}}>🎁 Reward Store</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",marginBottom:10}}>Spend your coins on rewards your grown-up added!</div>
+                  {store.map(it=>{
+                    const afford=coins>=it.cost;
+                    return(
+                      <div key={it.id} style={{display:"flex",alignItems:"center",gap:12,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:14,padding:12,marginBottom:9}}>
+                        <span style={{fontSize:28}}>{it.emoji}</span>
+                        <div style={{flex:1}}><div style={{fontSize:14,fontWeight:800,color:"#fff"}}>{it.name}</div><div style={{fontSize:12,fontWeight:800,color:"#fde68a"}}>🪙 {it.cost}</div></div>
+                        <button onClick={()=>redeemStoreItem(it)} disabled={!afford} style={{padding:"9px 14px",borderRadius:11,border:"none",background:afford?"linear-gradient(135deg,#f59e0b,#f97316)":"rgba(255,255,255,.08)",color:afford?"#fff":"rgba(255,255,255,.35)",fontFamily:"var(--fd)",fontSize:13,cursor:afford?"pointer":"default"}}>{afford?"Get it!":"Need more"}</button>
+                      </div>
+                    );
+                  })}
+                </>)}
+
+                {doneList.length>0&&<div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:12}}>✅ {doneList.length} task{doneList.length>1?"s":""} finished{doneList.some(t=>t.recurring!=="once")?" — daily/weekly ones come back!":""}</div>}
+              </div>
+              );
+            })()}
 
             {/* COIN SHOP */}
             {moreView==="Shop"&&(
@@ -2727,6 +2877,18 @@ function KidDash({user,savedState,onLogout}){
         )}
 
       </div>{/* end main */}
+
+      {/* Task/reward celebration */}
+      {taskCelebrate&&(
+        <div className="reward-ov" onClick={()=>setTaskCelebrate(null)}>
+          <div style={{fontSize:72,animation:"popUp .4s ease"}}>{taskCelebrate.emoji}</div>
+          <div style={{fontFamily:"var(--fd)",fontSize:24,color:"#fff",textAlign:"center"}}>{taskCelebrate.coins!=null?"Nice work!":"Woohoo!"}</div>
+          <div style={{fontSize:14,fontWeight:700,color:"rgba(255,255,255,.75)",textAlign:"center",lineHeight:1.5,maxWidth:300}}>{taskCelebrate.title}</div>
+          {taskCelebrate.coins!=null&&<div style={{fontFamily:"var(--fd)",fontSize:22,color:"#fde68a"}}>+{taskCelebrate.coins} 🪙</div>}
+          {taskCelebrate.label&&<div style={{fontSize:13,fontWeight:800,color:"#86efac",textAlign:"center"}}>{taskCelebrate.label}</div>}
+          <button onClick={()=>setTaskCelebrate(null)} style={{marginTop:8,padding:"12px 28px",borderRadius:14,border:"none",background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer"}}>Yay! 🎉</button>
+        </div>
+      )}
 
       {/* Bottom nav */}
       <nav className="bnav">
@@ -3259,15 +3421,51 @@ function KidDash({user,savedState,onLogout}){
 function ParentDash({kids,onResetKid,onLogout}){
   const [kidStates,setKidStates]=useState({});
   const [confirmReset,setConfirmReset]=useState(null);  // {kid, mode}
+  const [pv,setPv]=useState("perf");                    // perf | tasks
+  const [tasks,setTasks]=useState([]);
+  const [store,setStore]=useState([]);
+  const [claims,setClaims]=useState([]);
+  // New-task form
+  const [nKid,setNKid]=useState("");
+  const [nTitle,setNTitle]=useState("");
+  const [nCat,setNCat]=useState("chores");
+  const [nType,setNType]=useState("coins");             // coins | custom
+  const [nCoins,setNCoins]=useState(20);
+  const [nLabel,setNLabel]=useState("");
+  const [nEmoji,setNEmoji]=useState("🎁");
+  const [nRecur,setNRecur]=useState("once");
+  // New reward-store item
+  const [sName,setSName]=useState(""); const [sEmoji,setSEmoji]=useState("🎁"); const [sCost,setSCost]=useState(50);
+
   // Load each kid's saved state to show real performance
   useEffect(()=>{ (async()=>{
     const out={};
     for(const k of kids){ const st=await loadData(stateKey(k.id)); if(st) out[k.id]=st; }
     setKidStates(out);
   })(); },[kids]);
+  useEffect(()=>{ (async()=>{ setTasks(await loadTasks()); setStore(await loadStore()); setClaims(await loadClaims()); })(); },[]);
+  useEffect(()=>{ if(!nKid && kids.length) setNKid(kids[0].id); },[kids]);
 
   const kidTotal=(k)=>{ const st=kidStates[k.id]; if(!st) return k.cash||1000; return (st.lastValue ?? ((st.cash||0))); };
   const kidGain=(k)=>kidTotal(k)-1000;
+  const kidName=(id)=>kids.find(k=>k.id===id)?.name||"Your child";
+
+  const assignTask=()=>{
+    const title=nTitle.trim(); if(!title||!nKid) return;
+    const reward=nType==="coins"?{type:"coins",coins:Math.max(1,+nCoins||1)}:{type:"custom",label:nLabel.trim()||"a reward",emoji:nEmoji||"🎁"};
+    const t={id:uid(),kidId:nKid,title,cat:nCat,reward,recurring:nRecur,status:"todo",createdAt:Date.now()};
+    const next=[t,...tasks]; setTasks(next); saveTasks(next);
+    setNTitle(""); setNLabel("");
+    try{ window.toyboxSync?.notify?.(`📋 New task for ${kidName(nKid)}: "${title}". They'll see it in Toybox → ✅ My Tasks.`); }catch(e){}
+  };
+  const setTaskStatus=(id,status)=>{ const next=tasks.map(t=>t.id===id?{...t,status}:t); setTasks(next); saveTasks(next); };
+  const delTask=(id)=>{ const next=tasks.filter(t=>t.id!==id); setTasks(next); saveTasks(next); };
+  const addStoreItem=()=>{ const name=sName.trim(); if(!name) return; const next=[{id:uid(),name,emoji:sEmoji||"🎁",cost:Math.max(1,+sCost||1)},...store]; setStore(next); saveStore(next); setSName(""); };
+  const delStoreItem=(id)=>{ const next=store.filter(s=>s.id!==id); setStore(next); saveStore(next); };
+  const fulfillClaim=(id)=>{ const next=claims.map(c=>c.id===id?{...c,given:true}:c); setClaims(next); saveClaims(next); };
+
+  const pending=tasks.filter(t=>t.status==="pending");
+  const openClaims=claims.filter(c=>!c.given);
 
   return(
     <div className="dash" style={{background:"linear-gradient(160deg,#021a0e 0%,#052e16 50%,#021a0e 100%)"}}>
@@ -3277,6 +3475,14 @@ function ParentDash({kids,onResetKid,onLogout}){
         <div className="tb-chip" style={{background:"rgba(16,185,129,.15)",border:"1px solid rgba(16,185,129,.25)",color:"#86efac"}}>🔐 Verified</div>
       </div>
       <div className="main">
+        {kids.length>0&&(
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            {[["perf","📊 Performance"],["tasks",`✅ Tasks & Rewards${pending.length||openClaims.length?` (${pending.length+openClaims.length})`:""}`]].map(([k,l])=>(
+              <button key={k} onClick={()=>setPv(k)} style={{flex:1,padding:"9px",borderRadius:11,border:`1.5px solid ${pv===k?"rgba(16,185,129,.5)":"rgba(255,255,255,.14)"}`,background:pv===k?"rgba(16,185,129,.16)":"transparent",color:pv===k?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>{l}</button>
+            ))}
+          </div>
+        )}
+        {pv==="perf"&&(<>
         {kids.length===0?(
           <div style={{textAlign:"center",padding:"48px 20px"}}>
             <div style={{fontSize:54,marginBottom:14}}>👶</div>
@@ -3380,6 +3586,120 @@ function ParentDash({kids,onResetKid,onLogout}){
             <div key={i} style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.6)",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.07)",display:"flex",gap:8}}><span style={{color:"#86efac",flexShrink:0}}>→</span>{t}</div>
           ))}
         </div>
+        </>)}
+
+        {pv==="tasks"&&(<>
+          {kids.length===0?(
+            <div style={{textAlign:"center",padding:"40px 20px"}}>
+              <div style={{fontSize:48,marginBottom:12}}>✅</div>
+              <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff",marginBottom:8}}>Assign tasks & rewards</div>
+              <div style={{fontSize:13,color:"rgba(255,255,255,.55)",fontWeight:600,lineHeight:1.6}}>Once your kids have accounts, give them tasks (homework, chores, reading…) and reward them with coins or your own rewards. No real money — coins live in the app and can even be invested!</div>
+            </div>
+          ):(<>
+            {/* Pending approvals */}
+            {pending.length>0&&(
+              <div style={{marginBottom:16}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fde68a",marginBottom:8}}>⏳ Waiting for your OK ({pending.length})</div>
+                {pending.map(t=>(
+                  <div key={t.id} style={{background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.3)",borderRadius:14,padding:13,marginBottom:9}}>
+                    <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:2}}>{catOf(t.cat).icon} {t.title}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.55)",marginBottom:10}}>{kidName(t.kidId)} says it's done · reward {t.reward.type==="coins"?`🪙 ${t.reward.coins}`:`${t.reward.emoji} ${t.reward.label}`}</div>
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>setTaskStatus(t.id,"approved")} style={{flex:1,padding:"9px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#10b981,#059669)",color:"#fff",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>✓ Approve</button>
+                      <button onClick={()=>setTaskStatus(t.id,"todo")} style={{flex:1,padding:"9px",borderRadius:10,border:"1px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.6)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>↩ Not yet</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Claims to fulfill */}
+            {openClaims.length>0&&(
+              <div style={{marginBottom:16}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#c4b5fd",marginBottom:8}}>🎁 Rewards to give ({openClaims.length})</div>
+                {openClaims.map(c=>(
+                  <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(124,58,237,.1)",border:"1px solid rgba(124,58,237,.3)",borderRadius:14,padding:12,marginBottom:9}}>
+                    <span style={{fontSize:24}}>{c.emoji}</span>
+                    <div style={{flex:1}}><div style={{fontSize:13,fontWeight:800,color:"#fff"}}>{c.itemName}</div><div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.55)"}}>{kidName(c.kidId)} redeemed for {c.cost} 🪙</div></div>
+                    <button onClick={()=>fulfillClaim(c.id)} style={{padding:"8px 12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#10b981,#059669)",color:"#fff",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>✓ Given</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Assign a task */}
+            <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:15,marginBottom:16}}>
+              <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:12}}>➕ Give a task</div>
+              <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.45)",marginBottom:6}}>WHO</div>
+              <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:12}}>
+                {kids.map(k=>(<button key={k.id} onClick={()=>setNKid(k.id)} style={{padding:"7px 13px",borderRadius:100,border:`1.5px solid ${nKid===k.id?"rgba(16,185,129,.5)":"rgba(255,255,255,.15)"}`,background:nKid===k.id?"rgba(16,185,129,.16)":"transparent",color:nKid===k.id?"#fff":"rgba(255,255,255,.55)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer"}}>{k.avatar} {k.name}</button>))}
+              </div>
+              <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.45)",marginBottom:6}}>WHAT</div>
+              <input value={nTitle} onChange={e=>setNTitle(e.target.value)} placeholder="e.g. Read for 20 minutes" style={{width:"100%",padding:"11px 12px",borderRadius:11,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:14,fontWeight:600,marginBottom:8,boxSizing:"border-box"}}/>
+              <div style={{display:"flex",gap:6,overflowX:"auto",marginBottom:12,scrollbarWidth:"none"}}>
+                {TEMPLATES.map((tp,i)=>(<button key={i} onClick={()=>{setNTitle(tp.title);setNCat(tp.cat);}} style={{flexShrink:0,padding:"6px 11px",borderRadius:100,border:"1px solid rgba(255,255,255,.14)",background:"rgba(255,255,255,.05)",color:"rgba(255,255,255,.65)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{catOf(tp.cat).icon} {tp.title}</button>))}
+              </div>
+              <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.45)",marginBottom:6}}>CATEGORY</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+                {TASK_CATS.map(c=>(<button key={c.id} onClick={()=>setNCat(c.id)} style={{padding:"6px 11px",borderRadius:100,border:`1.5px solid ${nCat===c.id?"rgba(124,58,237,.5)":"rgba(255,255,255,.14)"}`,background:nCat===c.id?"rgba(124,58,237,.16)":"transparent",color:nCat===c.id?"#fff":"rgba(255,255,255,.5)",fontSize:11,fontWeight:800,cursor:"pointer"}}>{c.icon} {c.label}</button>))}
+              </div>
+              <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.45)",marginBottom:6}}>REWARD</div>
+              <div style={{display:"flex",gap:7,marginBottom:8}}>
+                <button onClick={()=>setNType("coins")} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${nType==="coins"?"rgba(245,158,11,.5)":"rgba(255,255,255,.14)"}`,background:nType==="coins"?"rgba(245,158,11,.14)":"transparent",color:nType==="coins"?"#fde68a":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>🪙 Coins</button>
+                <button onClick={()=>setNType("custom")} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${nType==="custom"?"rgba(124,58,237,.5)":"rgba(255,255,255,.14)"}`,background:nType==="custom"?"rgba(124,58,237,.14)":"transparent",color:nType==="custom"?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>🎁 Custom</button>
+              </div>
+              {nType==="coins"?(
+                <div style={{display:"flex",gap:7,marginBottom:12}}>
+                  {[10,20,50,100].map(n=>(<button key={n} onClick={()=>setNCoins(n)} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${nCoins===n?"rgba(245,158,11,.5)":"rgba(255,255,255,.14)"}`,background:nCoins===n?"rgba(245,158,11,.14)":"transparent",color:nCoins===n?"#fde68a":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>{n}</button>))}
+                </div>
+              ):(
+                <div style={{display:"flex",gap:7,marginBottom:12}}>
+                  <input value={nEmoji} onChange={e=>setNEmoji(e.target.value.slice(0,2))} style={{width:52,padding:"11px",borderRadius:11,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:20,textAlign:"center",boxSizing:"border-box"}}/>
+                  <input value={nLabel} onChange={e=>setNLabel(e.target.value)} placeholder="e.g. 30 min screen time, a Lego set…" style={{flex:1,padding:"11px 12px",borderRadius:11,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:13,fontWeight:600,boxSizing:"border-box"}}/>
+                </div>
+              )}
+              <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.45)",marginBottom:6}}>HOW OFTEN</div>
+              <div style={{display:"flex",gap:7,marginBottom:14}}>
+                {[["once","Once"],["daily","Every day"],["weekly","Every week"]].map(([v,l])=>(<button key={v} onClick={()=>setNRecur(v)} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${nRecur===v?"rgba(255,255,255,.4)":"rgba(255,255,255,.14)"}`,background:nRecur===v?"rgba(255,255,255,.12)":"transparent",color:nRecur===v?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer"}}>{l}</button>))}
+              </div>
+              <button onClick={assignTask} disabled={!nTitle.trim()} style={{width:"100%",padding:13,borderRadius:13,border:"none",background:nTitle.trim()?"linear-gradient(135deg,#10b981,#059669)":"rgba(255,255,255,.1)",color:nTitle.trim()?"#fff":"rgba(255,255,255,.4)",fontFamily:"var(--fd)",fontSize:15,cursor:nTitle.trim()?"pointer":"default"}}>Give this task 📋</button>
+            </div>
+
+            {/* Active tasks */}
+            {tasks.filter(t=>t.status!=="done").length>0&&(
+              <div style={{marginBottom:16}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff",marginBottom:8}}>📋 Active tasks</div>
+                {tasks.filter(t=>t.status!=="done").map(t=>(
+                  <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,.05)",borderRadius:12,padding:"10px 12px",marginBottom:7}}>
+                    <span style={{fontSize:18}}>{catOf(t.cat).icon}</span>
+                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.title}</div><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.45)"}}>{kidName(t.kidId)} · {t.status==="pending"?"⏳ waiting":t.status==="approved"?"✓ approved":"to do"} · {t.reward.type==="coins"?`🪙${t.reward.coins}`:t.reward.emoji}</div></div>
+                    <button onClick={()=>delTask(t.id)} style={{background:"none",border:"none",color:"rgba(255,255,255,.3)",fontSize:16,cursor:"pointer"}}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Reward store editor */}
+            <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:15,marginBottom:16}}>
+              <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>🎁 Reward Store</div>
+              <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",lineHeight:1.5,marginBottom:12}}>Add rewards kids can buy with saved coins (a toy, screen time, an outing). You give the real reward when they redeem it.</div>
+              {store.map(it=>(
+                <div key={it.id} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,.05)",borderRadius:11,padding:"9px 11px",marginBottom:7}}>
+                  <span style={{fontSize:22}}>{it.emoji}</span>
+                  <div style={{flex:1}}><div style={{fontSize:13,fontWeight:800,color:"#fff"}}>{it.name}</div><div style={{fontSize:11,fontWeight:800,color:"#fde68a"}}>🪙 {it.cost}</div></div>
+                  <button onClick={()=>delStoreItem(it.id)} style={{background:"none",border:"none",color:"rgba(255,255,255,.3)",fontSize:16,cursor:"pointer"}}>✕</button>
+                </div>
+              ))}
+              <div style={{display:"flex",gap:7,marginTop:8}}>
+                <input value={sEmoji} onChange={e=>setSEmoji(e.target.value.slice(0,2))} style={{width:48,padding:"10px",borderRadius:10,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:18,textAlign:"center",boxSizing:"border-box"}}/>
+                <input value={sName} onChange={e=>setSName(e.target.value)} placeholder="Reward name" style={{flex:1,padding:"10px 11px",borderRadius:10,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:13,fontWeight:600,boxSizing:"border-box"}}/>
+                <input value={sCost} onChange={e=>setSCost(e.target.value.replace(/\D/g,""))} inputMode="numeric" style={{width:60,padding:"10px",borderRadius:10,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:14,textAlign:"center",boxSizing:"border-box"}}/>
+              </div>
+              <button onClick={addStoreItem} disabled={!sName.trim()} style={{width:"100%",marginTop:8,padding:11,borderRadius:11,border:"none",background:sName.trim()?"rgba(124,58,237,.3)":"rgba(255,255,255,.08)",color:sName.trim()?"#fff":"rgba(255,255,255,.4)",fontFamily:"var(--fd)",fontSize:13,cursor:sName.trim()?"pointer":"default"}}>+ Add reward</button>
+            </div>
+          </>)}
+        </>)}
+
         <button onClick={onLogout} style={{width:"100%",marginTop:16,padding:"12px",borderRadius:13,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"rgba(255,255,255,.3)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>🚪 Log out of Parent Mode</button>
       </div>
 
