@@ -3736,6 +3736,8 @@ function ParentDash({kids,onResetKid,onLogout}){
 
   const pending=tasks.filter(t=>t.status==="pending");
   const openClaims=claims.filter(c=>!c.given);
+  // Everything that needs the parent to act — drives the Tasks tab badge.
+  const attention=pending.length+openClaims.length+kids.filter(k=>(owed[k.id]||0)>0).length+requests.filter(r=>r.status==="asked").length;
 
   return(
     <div className="dash" style={{background:"linear-gradient(160deg,#021a0e 0%,#052e16 50%,#021a0e 100%)"}}>
@@ -3747,8 +3749,12 @@ function ParentDash({kids,onResetKid,onLogout}){
       <div className="main">
         {kids.length>0&&(
           <div style={{display:"flex",gap:8,marginBottom:14}}>
-            {[["perf","📊 Kids"],["tasks",`✅ Tasks${pending.length||openClaims.length?` (${pending.length+openClaims.length})`:""}`],["report","📈 Report"]].map(([k,l])=>(
-              <button key={k} onClick={()=>setPv(k)} style={{flex:1,padding:"9px 4px",borderRadius:11,border:`1.5px solid ${pv===k?"rgba(16,185,129,.5)":"rgba(255,255,255,.14)"}`,background:pv===k?"rgba(16,185,129,.16)":"transparent",color:pv===k?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>{l}</button>
+            {[["perf","📊 Kids"],["tasks","✅ Tasks"],["report","📈 Report"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setPv(k)} style={{position:"relative",flex:1,padding:"9px 4px",borderRadius:11,border:`1.5px solid ${pv===k?"rgba(16,185,129,.5)":"rgba(255,255,255,.14)"}`,background:pv===k?"rgba(16,185,129,.16)":"transparent",color:pv===k?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>{l}
+                {k==="tasks"&&attention>0&&(
+                  <span style={{position:"absolute",top:-7,right:-6,minWidth:20,height:20,padding:"0 5px",borderRadius:100,background:"#ef4444",color:"#fff",fontFamily:"var(--fd)",fontSize:11,lineHeight:"20px",boxShadow:"0 2px 6px rgba(239,68,68,.5)",border:"2px solid #052e16",boxSizing:"border-box"}}>{attention>9?"9+":attention}</span>
+                )}
+              </button>
             ))}
           </div>
         )}
