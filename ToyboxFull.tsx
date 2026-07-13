@@ -180,6 +180,42 @@ const BUG_CATS = [
 
 // ─── Lessons with adventure map ────────────────────
 const LESSONS = [
+  {id:"money_basics",icon:"💵",title:"What is Money?",color:"#22c55e",cashReward:25,island:"Money Start",
+   slides:[
+    {icon:"🔄",title:"Money is a swap tool",body:"Long ago, people swapped things — I give you apples, you give me bread. Money makes swapping easy! Everyone agrees a coin is worth something, so you can trade it for almost anything.",example:"💡 A $1 bill is just paper — but everyone agrees it's worth $1, so you can swap it for a treat!"},
+    {icon:"⏳",title:"Money runs out",body:"You only have so much money. Once you spend it, it's gone until you earn more. That's why smart kids choose carefully what to buy.",example:"💡 Spend your whole $10 on candy Monday, and there's nothing left for the rest of the week!"},
+   ],
+   quiz:[
+    {q:"What is money really for?",opts:["Swapping for things you need or want","Eating it","Nothing at all","Drawing pictures"],correct:0,why:"Money is a tool everyone agrees on, so we can swap it for things we need and want!"},
+    {q:"What happens when you spend ALL your money?",opts:["It magically comes back","It's gone until you earn more","It doubles","Nothing changes"],correct:1,why:"Once it's spent, it's gone until you earn or get more — so choose carefully!"},
+   ],},
+  {id:"needs_wants",icon:"🥦",title:"Needs vs Wants",color:"#10b981",cashReward:25,island:"Choice Cove",
+   slides:[
+    {icon:"🥦",title:"Needs come first",body:"Needs are things you MUST have to live: food, water, a home, clothes. Wants are the fun extras: toys, candy, games. Smart spenders pay for needs FIRST.",example:"💡 Dinner (a need) always comes before a new toy (a want)!"},
+    {icon:"🍦",title:"Wants are still okay!",body:"Wants aren't bad — treats make life fun! Just make sure your needs are covered first, then enjoy your wants without worry.",example:"💡 Chores done and food covered? Now that ice cream is a well-earned treat! 🍦"},
+   ],
+   quiz:[
+    {q:"Which of these is a NEED?",opts:["A new video game","Food to eat","Candy","A fancy toy"],correct:1,why:"Food is a need — you can't live without it! The others are fun wants."},
+    {q:"What should you spend on FIRST?",opts:["Wants","Needs","Toys","Candy"],correct:1,why:"Needs first, then wants — that's how smart grown-ups budget their money!"},
+   ],},
+  {id:"earning",icon:"🛠️",title:"Where Money Comes From",color:"#3b82f6",cashReward:25,island:"Work Woods",
+   slides:[
+    {icon:"🛠️",title:"Money is earned",body:"Money doesn't appear by magic — people earn it by working, helping and doing jobs. Your chores are your very first 'job'!",example:"💡 Do your chores → earn coins. That's EXACTLY how grown-ups earn money at their jobs!"},
+    {icon:"📚",title:"Learning = earning",body:"The more useful your skills, the more you can earn. Kids who read and learn become grown-ups who can do bigger jobs — and earn more!",example:"💡 Every lesson you finish makes you smarter about money. Learning pays off for life!"},
+   ],
+   quiz:[
+    {q:"Where does money usually come from?",opts:["It grows on trees","Working and helping others","Pure magic","Falling from the sky"],correct:1,why:"Money is earned by working and helping — just like your chores earn you coins!"},
+    {q:"How can you earn MORE when you grow up?",opts:["Do nothing all day","Learn skills and work hard","Sleep more","Wish for it"],correct:1,why:"Learning skills lets you do bigger jobs and earn more. Learning always pays off!"},
+   ],},
+  {id:"saving_basics",icon:"🐷",title:"The Magic of Saving",color:"#f59e0b",cashReward:25,island:"Piggy Bay",
+   slides:[
+    {icon:"🐷",title:"A little adds up",body:"Save just a little each week and it grows into a LOT. Skipping one candy ($1) a week adds up to $52 in a year — that's real magic!",example:"💡 Save $2 a week → over $100 in a year. Enough for something BIG!"},
+    {icon:"🎯",title:"Save for something you love",body:"Saving is easier when you have a goal. Picture the thing you really want, then watch your savings jar fill up toward it, week by week.",example:"💡 Want a $40 Lego set? Save $5 a week and it's yours in just 8 weeks!"},
+   ],
+   quiz:[
+    {q:"What happens when you save a little every week?",opts:["Nothing at all","It slowly adds up to a lot","It disappears","It gets smaller"],correct:1,why:"Small savings add up fast! A little every week becomes a big pile over time."},
+    {q:"What makes saving easier and more fun?",opts:["Having a goal to save for","Spending it right away","Forgetting about it","Hiding it away"],correct:0,why:"A goal makes saving fun — you get to watch your jar fill up toward the thing you want!"},
+   ],},
   {id:"investing",icon:"🍋",title:"What is Investing?",color:"#6366f1",cashReward:50,island:"Lemonade Island",
    slides:[
     {icon:"🍋",title:"The Lemonade Stand Lesson",body:"Your friend opens a lemonade stand for $10. She lets you invest $5 to own half. Every dollar it earns, you get 50 cents back. That's investing — your money works FOR you!",example:"💡 Stand earns $20 on Saturday → your $5 earns $10 back. That's doubling your money in ONE day!"},
@@ -349,6 +385,21 @@ const LESSONS = [
     {q:"What does a STOP-LOSS do?",opts:["Guarantees profit","Sells automatically if price drops too far, capping your loss","Buys more forever","Nothing useful"],correct:1,why:"A stop-loss caps your downside — you lose a set amount at most, so one bad bet can't wreck everything!"},
    ],},
 ];
+
+// Difficulty tag for each lesson so kids (and parents) can see what's age-right.
+// Starter = youngest money basics, Grow = core investing, Pro = advanced ideas.
+const LESSON_LEVELS = {
+  Starter:{label:"Starter",emoji:"🌱",color:"#22c55e",age:"Ages 8+"},
+  Grow:{label:"Grow",emoji:"🌿",color:"#06b6d4",age:"Ages 10+"},
+  Pro:{label:"Pro",emoji:"🌳",color:"#8b5cf6",age:"Ages 13+"},
+};
+const LESSON_LEVEL = {
+  money_basics:"Starter", needs_wants:"Starter", earning:"Starter", saving_basics:"Starter",
+  investing:"Grow", when_buy:"Grow", when_sell:"Grow", crypto:"Grow", charts:"Grow",
+  risk:"Grow", dca:"Grow", buy_hold:"Grow", diversify_deep:"Grow", dividends:"Grow", index:"Grow",
+  options:"Pro", psychology:"Pro", value_growth:"Pro", time_in_market:"Pro", exit_strategy:"Pro",
+};
+const levelOf=(id)=>LESSON_LEVELS[LESSON_LEVEL[id]]||LESSON_LEVELS.Grow;
 
 // ─── Daily stories ─────────────────────────────────
 const DAILY_STORIES = [
@@ -1909,7 +1960,7 @@ function KidDash({user,savedState,onLogout}){
   };
 
   const MISSIONS=[
-    {id:"m1",icon:"📚",title:"Complete your first lesson",sub:"Tap Learn and start 'What is Investing?'",action:()=>setNav("Learn")},
+    {id:"m1",icon:"📚",title:"Complete your first lesson",sub:"Tap Learn and start 'What is Money?'",action:()=>setNav("Learn")},
     {id:"m2",icon:"🧱",title:"Make your first trade",sub:"Tap Trade ⚡ and buy 1 Apple Building Block",action:()=>setNav("Trade")},
     {id:"m3",icon:"🔮",title:"Make a price prediction",sub:"Tap the ••• menu → Predict",action:()=>{setMoreOpen(true);setMoreView("Predict");}},
   ];
@@ -1936,20 +1987,29 @@ function KidDash({user,savedState,onLogout}){
   const weekStats={best:portfolio.reduce((b,h)=>{const g=(prices[h.ticker]||h.avgCost)-h.avgCost;return g>b.g?{name:h.name,g}:b;},{name:"None",g:0}),trades:portfolio.length,gainPct:portVal>0?parseFloat(pct(portVal,portfolio.reduce((s,h)=>s+h.qty*h.avgCost,0))):0};
   const reportGrade=weekStats.gainPct>=10?"A+":weekStats.gainPct>=5?"A":weekStats.gainPct>=0?"B":weekStats.gainPct>=-5?"C":"D";
 
-  const MORE_ITEMS=[
-    {id:"Tasks",   icon:"✅",label:"My Tasks"},
-    ...(ttEnabled?[{id:"Together",icon:"💛",label:"Together"}]:[]),
-    {id:"Shop",    icon:"🛍️",label:"Shop"},
-    {id:"Badges",  icon:"🏅",label:"Badges"},
-    {id:"Performance",icon:"📈",label:"P&L"},
-    {id:"Orders",  icon:"⏳",label:"Orders"},
-    {id:"Ranks",   icon:"🏆",label:"Ranks"},
-    {id:"Cards",   icon:"🎴",label:"Cards"},
-    {id:"Challenge",icon:"⚔️",label:"Battle"},
-    {id:"Predict", icon:"🔮",label:"Predict"},
-    {id:"Club",    icon:"🤝",label:"Club"},
-    {id:"Report",  icon:"📊",label:"Report"},
-    {id:"Backup",  icon:"💾",label:"Backup"},
+  // Grouped so the drawer reads as tidy sections instead of one long grid.
+  const MORE_GROUPS=[
+    {title:"💰 Money & Tasks",items:[
+      {id:"Tasks",   icon:"✅",label:"My Tasks"},
+      ...(ttEnabled?[{id:"Together",icon:"💛",label:"Together"}]:[]),
+      {id:"Shop",    icon:"🛍️",label:"Shop"},
+      {id:"Orders",  icon:"⏳",label:"Orders"},
+    ]},
+    {title:"🎮 Games & Fun",items:[
+      {id:"Cards",   icon:"🎴",label:"Cards"},
+      {id:"Challenge",icon:"⚔️",label:"Battle"},
+      {id:"Predict", icon:"🔮",label:"Predict"},
+      {id:"Ranks",   icon:"🏆",label:"Ranks"},
+      {id:"Club",    icon:"🤝",label:"Club"},
+    ]},
+    {title:"⭐ My Progress",items:[
+      {id:"Badges",  icon:"🏅",label:"Badges"},
+      {id:"Performance",icon:"📈",label:"P&L"},
+      {id:"Report",  icon:"📊",label:"Report"},
+    ]},
+    {title:"⚙️ Settings",items:[
+      {id:"Backup",  icon:"💾",label:"Backup"},
+    ]},
   ];
 
   return(
@@ -2296,7 +2356,12 @@ function KidDash({user,savedState,onLogout}){
                   <div key={ls.id} className={`map-node ${isRight?"right":""}`}>
                     <div className={`map-circle ${done?"done":curr?"curr":"lock"}`}>{done?"✅":ls.icon}</div>
                     <div className={`map-content ${done?"done":curr?"curr":""}`} style={{opacity:locked?.5:1}}>
-                      <div className="map-island">{ls.island}</div>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2,flexWrap:"wrap"}}>
+                        <div className="map-island" style={{marginBottom:0}}>{ls.island}</div>
+                        {(()=>{const lv=levelOf(ls.id);return(
+                          <span style={{fontSize:8.5,fontWeight:800,background:`${lv.color}22`,color:lv.color,padding:"2px 7px",borderRadius:100,letterSpacing:".3px"}}>{lv.emoji} {lv.label} · {lv.age}</span>
+                        );})()}
+                      </div>
                       <div className="map-title" style={{color:locked?"rgba(255,255,255,.4)":"#fff"}}>{ls.title}</div>
                       <div className="map-rewards">
                         <div className="map-rew-chip" style={{background:"rgba(245,158,11,.15)",color:"#f59e0b"}}>💵 +{fs$(ls.cashReward)}</div>
@@ -3091,14 +3156,19 @@ function KidDash({user,savedState,onLogout}){
         <div className="drawer-ov" onClick={()=>setMoreOpen(false)}>
           <div className="drawer" onClick={e=>e.stopPropagation()}>
             <div style={{width:36,height:4,borderRadius:100,background:"rgba(255,255,255,.15)",margin:"0 auto 16px"}}/>
-            <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>More Features</div>
-            <div className="drawer-grid">
-              {MORE_ITEMS.map(m=>(
-                <button key={m.id} className={`drawer-btn ${moreView===m.id&&nav==="More"?"on":""}`} onClick={()=>{setMoreView(m.id);setNav("More");setMoreOpen(false);}}>
-                  <span className="di">{m.icon}</span>{m.label}
-                </button>
-              ))}
-            </div>
+            <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>More Features</div>
+            {MORE_GROUPS.map(g=>(
+              <div key={g.title} style={{marginTop:14}}>
+                <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.45)",textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}>{g.title}</div>
+                <div className="drawer-grid">
+                  {g.items.map(m=>(
+                    <button key={m.id} className={`drawer-btn ${moreView===m.id&&nav==="More"?"on":""}`} onClick={()=>{setMoreView(m.id);setNav("More");setMoreOpen(false);}}>
+                      <span className="di">{m.icon}</span>{m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
