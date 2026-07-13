@@ -3,7 +3,9 @@
 //   /api/prices?history=BTC&since=MS → intraday candles (order backfill)
 // Server-side fetch (no CORS). Stocks: Yahoo→Stooq. Crypto: CoinGecko→Coinbase.
 
-const STOCKS = ["AAPL", "RBLX", "DIS", "NVDA"];
+// Single stocks + ETFs/gold/bonds/international — all price the same way
+// through Yahoo/Stooq, so ETFs and "other markets" need no special handling.
+const STOCKS = ["AAPL", "RBLX", "DIS", "NVDA", "VOO", "QQQ", "GLD", "TLT", "VXUS"];
 const UA = "Mozilla/5.0 (compatible; ToyboxTrader/1.0)";
 const CACHE_MS = 30_000;
 

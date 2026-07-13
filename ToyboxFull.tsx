@@ -97,35 +97,72 @@ const pct = (a,b) => (((a-b)/b)*100).toFixed(1);
 const toRobux = d => Math.round(d*10).toLocaleString();
 
 // ─── Market data ───────────────────────────────────
+// Each asset has a `cat` (how it's grouped) and `minAge` (kids younger than
+// this see it as a locked "coming soon" card). Age comes from what we already
+// collect at sign-up — no new data needed.
+//   cat: "stock" | "crypto" (all ages) · "etf" (10+) · "other" markets (13+)
 const MARKET = [
-  {ticker:"AAPL",name:"Apple",   type:"stock", basePrice:250.00,icon:"🍎",color:"#6366f1",
+  {ticker:"AAPL",name:"Apple",   type:"stock", cat:"stock", minAge:0, basePrice:250.00,icon:"🍎",color:"#6366f1",
    tagline:"Makes iPhones — billions sold every year",risk:"low",
    kidEx:"Apple is like the most popular kid at school. Every iPhone your parents buy makes Apple richer — and you too if you own a block!",
    news:"📱 Big idea: when Apple launches a popular new iPhone, lots of people buy it — that can lift the stock.",newsGood:true,trend:"up"},
-  {ticker:"RBLX",name:"Roblox",  type:"stock", basePrice:115.00,icon:"🎮",color:"#ec4899",
+  {ticker:"RBLX",name:"Roblox",  type:"stock", cat:"stock", minAge:0, basePrice:115.00,icon:"🎮",color:"#ec4899",
    tagline:"70 million kids play this every single day",risk:"medium",
    kidEx:"Every time someone buys Robux, Roblox earns money. Own a block and get a tiny slice of every Robux purchase!",
    news:"🎮 Big idea: the more kids who play Roblox and buy Robux, the more the company can earn.",newsGood:true,trend:"up"},
-  {ticker:"DIS", name:"Disney",  type:"stock", basePrice:112.00,icon:"🏰",color:"#8b5cf6",
+  {ticker:"DIS", name:"Disney",  type:"stock", cat:"stock", minAge:0, basePrice:112.00,icon:"🏰",color:"#8b5cf6",
    tagline:"Owns Marvel, Star Wars, Frozen & Disney+",risk:"low",
    kidEx:"Disney owns almost every movie you love. Every cinema ticket and Disney+ subscription earns them money!",
    news:"🎬 Big idea: a hit Marvel movie or busy Disney+ can mean more money for Disney.",newsGood:true,trend:"flat"},
-  {ticker:"NVDA",name:"Nvidia",  type:"stock", basePrice:175.00,icon:"🖥️",color:"#10b981",
+  {ticker:"NVDA",name:"Nvidia",  type:"stock", cat:"stock", minAge:0, basePrice:175.00,icon:"🖥️",color:"#10b981",
    tagline:"Their chips power every video game AND every AI",risk:"medium",
    kidEx:"Your PS5, Xbox and every AI chatbot runs on Nvidia chips. They power gaming AND AI!",
    news:"🤖 Big idea: when AI and gaming companies need lots of chips, Nvidia can sell more of them.",newsGood:true,trend:"up"},
-  {ticker:"BTC", name:"Bitcoin", type:"crypto",basePrice:100000,icon:"₿", color:"#f59e0b",
+  {ticker:"BTC", name:"Bitcoin", type:"crypto",cat:"crypto",minAge:0, basePrice:100000,icon:"₿", color:"#f59e0b",
    tagline:"Only 21 million ever — like limited Pokémon cards",risk:"high",
    kidEx:"Only 21 million Bitcoins will EVER exist. Like a limited holographic Pokémon card — if everyone wants it, price goes up!",
    news:"⚠️ Big idea: Bitcoin's price can jump up and down a LOT in a short time — that's called being 'volatile'.",newsGood:false,trend:"volatile"},
-  {ticker:"ETH", name:"Ethereum",type:"crypto",basePrice:3500,  icon:"⟠",color:"#06b6d4",
+  {ticker:"ETH", name:"Ethereum",type:"crypto",cat:"crypto",minAge:0, basePrice:3500,  icon:"⟠",color:"#06b6d4",
    tagline:"Digital money that runs thousands of apps",risk:"high",
    kidEx:"Ethereum is like Roblox's currency system but for the whole internet. More apps = more demand!",
    news:"⚠️ Big idea: Ethereum is crypto too, so its price can also swing up and down quickly — high risk!",newsGood:false,trend:"volatile"},
+
+  // ── ETFs (unlock at age 10) — "baskets" that teach diversification ──
+  {ticker:"VOO", name:"S&P 500", type:"stock", cat:"etf", minAge:10, badge:"Basket", basePrice:500.00,icon:"🧺",color:"#3b82f6",
+   tagline:"500 of America's biggest companies in ONE basket",risk:"low",
+   kidEx:"Instead of picking ONE company, this basket owns a tiny slice of 500 big ones — Apple, Disney, Nvidia and more. If one has a bad day, the others help balance it out. Safer than one stock!",
+   news:"🧺 Big idea: an ETF is a basket of many stocks at once. One bad company barely hurts — that's called 'spreading your risk'.",newsGood:true,trend:"up"},
+  {ticker:"QQQ", name:"Tech 100", type:"stock", cat:"etf", minAge:10, badge:"Basket", basePrice:500.00,icon:"💻",color:"#14b8a6",
+   tagline:"A basket of the 100 biggest tech companies",risk:"medium",
+   kidEx:"This basket is stuffed with the biggest tech names — Apple, Nvidia, Microsoft and friends. When tech does well, the whole basket grows together!",
+   news:"💻 Big idea: a tech basket has more exciting ups AND downs than a mixed one, because it's all one type of company.",newsGood:true,trend:"up"},
+
+  // ── Other markets (unlock at age 13) — for older kids ──
+  {ticker:"GLD", name:"Gold",    type:"stock", cat:"other", minAge:13, badge:"Gold", basePrice:240.00,icon:"🥇",color:"#eab308",
+   tagline:"Own real gold without a treasure chest",risk:"low",
+   kidEx:"This lets you own real gold without hiding bars under your bed! People often buy gold when they feel nervous about other investments — it's known as a 'safe haven'.",
+   news:"🥇 Big idea: gold often stays calm (or even rises) when stocks get scary. It moves differently from stocks.",newsGood:true,trend:"flat"},
+  {ticker:"TLT", name:"Gov Bonds",type:"stock", cat:"other", minAge:13, badge:"Bond", basePrice:90.00,icon:"🏦",color:"#64748b",
+   tagline:"Lending money to the government for interest",risk:"low",
+   kidEx:"A bond is like lending your allowance and getting it back later PLUS a little extra. This is a basket of loans to the US government — the slow-and-steady one, not exciting but calm.",
+   news:"🏦 Big idea: bonds are usually calmer than stocks. Slow and steady wins races, not thrills.",newsGood:true,trend:"flat"},
+  {ticker:"VXUS",name:"World",   type:"stock", cat:"other", minAge:13, badge:"World", basePrice:65.00,icon:"🌍",color:"#22c55e",
+   tagline:"Companies from EVERY country but the USA",risk:"medium",
+   kidEx:"This basket owns companies from all over the planet — Japan, Europe, everywhere except the USA. It's how investors avoid betting on just one country!",
+   news:"🌍 Big idea: owning companies from other countries means you're not depending on just ONE country doing well.",newsGood:true,trend:"flat"},
 ];
 // Approximate fallback prices — only shown if the live price feed is
-// unreachable. The Netlify /prices function overrides these with real quotes.
-const INIT_PRICES = {AAPL:250.00,RBLX:115.00,DIS:112.00,NVDA:175.00,BTC:100000,ETH:3500};
+// unreachable. The /prices function overrides these with real quotes.
+const INIT_PRICES = {AAPL:250.00,RBLX:115.00,DIS:112.00,NVDA:175.00,BTC:100000,ETH:3500,VOO:500.00,QQQ:500.00,GLD:240.00,TLT:90.00,VXUS:65.00};
+// Trade-screen tabs. `minAge` gates the whole group; younger kids see a
+// friendly locked card instead of the tradable ones.
+const CATS = [
+  {k:"all",   label:"🌐 All",     minAge:0},
+  {k:"stock", label:"🧱 Blocks",  minAge:0},
+  {k:"crypto",label:"🃏 Cards",   minAge:0},
+  {k:"etf",   label:"🧺 Baskets", minAge:10},
+  {k:"other", label:"🌍 Markets", minAge:13},
+];
 
 // ─── Lessons with adventure map ────────────────────
 const LESSONS = [
@@ -1559,7 +1596,9 @@ function KidDash({user,savedState,onLogout}){
 
   // Grant a rare collectible card (used by the daily bonus + spin wheel).
   const grantRareCard = () => {
-    const a = MARKET[Math.floor(Math.random()*MARKET.length)];
+    // Collectibles are the fun single stocks + crypto — not ETFs/bonds/gold.
+    const pool = MARKET.filter(a=>a.cat==="stock"||a.cat==="crypto");
+    const a = pool[Math.floor(Math.random()*pool.length)];
     setInvCards(cs=>[...cs,{id:Date.now()+Math.random(),ticker:a.ticker,name:a.name,icon:a.icon,color:a.color,buyPrice:prices[a.ticker]||a.basePrice,qty:0,earnedAt:new Date().toLocaleDateString("en-US",{day:"numeric",month:"short"}),tier:"✨ Rare"}]);
   };
 
@@ -1970,29 +2009,55 @@ function KidDash({user,savedState,onLogout}){
               </div>
             </div>
             <div style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",borderRadius:13,padding:12,marginBottom:14,fontSize:12,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.6}}>
-              💡 Read the news inside each card. Start with 🟢 lower risk Building Blocks before trying 🔴 Collector Cards (crypto). Tap any card to see what could happen to your money!
+              💡 Read the news inside each card. Start with 🟢 lower risk before trying 🔴 higher risk. <strong style={{color:"#fff"}}>🧺 Baskets (ETFs)</strong> hold LOTS of companies at once — a safe way to own many! Tap any card to see what could happen.
             </div>
-            <div style={{display:"flex",gap:7,marginBottom:13,overflowX:"auto",scrollbarWidth:"none"}}>
-              {[["all","🌐 All"],["stock","🧱 Blocks"],["crypto","🃏 Cards"]].map(([k,l])=>(
-                <button key={k} onClick={()=>setTradeTab(k)} style={{padding:"7px 14px",borderRadius:100,border:`1.5px solid ${tradeTab===k?"rgba(255,255,255,.4)":"rgba(255,255,255,.14)"}`,background:tradeTab===k?"rgba(255,255,255,.14)":"transparent",color:tradeTab===k?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>{l}</button>
-              ))}
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              {MARKET.filter(a=>tradeTab==="all"||a.type===tradeTab).map(a=>{
-                const cur=prices[a.ticker]||a.basePrice;const chg=parseFloat(pct(cur,refPrice[a.ticker]||a.basePrice));
-                return(
-                  <div key={a.ticker} onClick={()=>openTrade(a)} style={{borderRadius:14,padding:14,cursor:"pointer",position:"relative",overflow:"hidden",background:`linear-gradient(135deg,${a.color}bb,${a.color}55)`,border:`1px solid ${a.color}44`,transition:"all .2s"}}>
-                    <div style={{position:"absolute",top:9,right:9,fontSize:9,fontWeight:800,background:"rgba(0,0,0,.25)",padding:"2px 7px",borderRadius:100,color:"rgba(255,255,255,.75)",textTransform:"uppercase"}}>{a.type==="stock"?"Block":"Card"}</div>
-                    <div style={{fontSize:28,marginBottom:4,display:"block"}}>{a.icon}</div>
-                    <div style={{fontFamily:"var(--fd)",fontSize:13,color:"#fff",marginBottom:2}}>{a.name}</div>
-                    <div style={{fontSize:9,color:"rgba(255,255,255,.55)",fontWeight:600,marginBottom:7,lineHeight:1.3}}>{a.tagline}</div>
-                    <div style={{fontSize:14,fontWeight:900,color:"#fff"}}>{fs$(cur)}</div>
-                    <div style={{fontSize:10,fontWeight:700,marginTop:2,color:chg>=0?"#86efac":"#fca5a5"}}>{chg>=0?"▲":"▼"} {Math.abs(chg)}%</div>
-                    <div style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:100,marginTop:5,display:"inline-block",background:a.risk==="low"?"rgba(16,185,129,.25)":a.risk==="medium"?"rgba(245,158,11,.25)":"rgba(239,68,68,.25)",color:a.risk==="low"?"#86efac":a.risk==="medium"?"#fde68a":"#fca5a5"}}>{a.risk==="low"?"🟢 Lower Risk":a.risk==="medium"?"🟠 Medium Risk":"🔴 High Risk"}</div>
-                  </div>
-                );
-              })}
-            </div>
+            {(()=>{
+              const kidAge = user.age || 8;
+              const catLocked = c => { const m=CATS.find(x=>x.k===c); return m ? kidAge < m.minAge : false; };
+              const catOf = a => a.cat || (a.type==="crypto"?"crypto":"stock");
+              const badgeOf = a => a.badge || (a.cat==="crypto"?"Card":a.cat==="etf"?"Basket":"Block");
+              const shown = MARKET.filter(a=> tradeTab==="all" ? !catLocked(catOf(a)) : catOf(a)===tradeTab);
+              const lockedTab = tradeTab!=="all" && catLocked(tradeTab);
+              const lockMin = CATS.find(x=>x.k===tradeTab)?.minAge;
+              return(<>
+              <div style={{display:"flex",gap:7,marginBottom:13,overflowX:"auto",scrollbarWidth:"none"}}>
+                {CATS.map(c=>{const locked=catLocked(c.k);return(
+                  <button key={c.k} onClick={()=>setTradeTab(c.k)} style={{padding:"7px 14px",borderRadius:100,border:`1.5px solid ${tradeTab===c.k?"rgba(255,255,255,.4)":"rgba(255,255,255,.14)"}`,background:tradeTab===c.k?"rgba(255,255,255,.14)":"transparent",color:tradeTab===c.k?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,opacity:locked?.65:1}}>{c.label}{locked?" 🔒":""}</button>
+                );})}
+              </div>
+              {lockedTab&&(
+                <div style={{background:"rgba(124,58,237,.12)",border:"1px solid rgba(124,58,237,.3)",borderRadius:13,padding:14,marginBottom:12,fontSize:13,fontWeight:800,color:"#c4b5fd",lineHeight:1.5,textAlign:"center"}}>
+                  🔒 These unlock at <strong style={{color:"#fff"}}>age {lockMin}</strong>. Here's a peek at what's coming — keep learning and leveling up! 👇
+                </div>
+              )}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                {shown.map(a=>{
+                  const cur=prices[a.ticker]||a.basePrice;const chg=parseFloat(pct(cur,refPrice[a.ticker]||a.basePrice));
+                  const locked=catLocked(catOf(a));
+                  if(locked) return(
+                    <div key={a.ticker} style={{borderRadius:14,padding:14,position:"relative",overflow:"hidden",background:"rgba(255,255,255,.05)",border:"1px dashed rgba(255,255,255,.18)"}}>
+                      <div style={{position:"absolute",top:9,right:9,fontSize:13}}>🔒</div>
+                      <div style={{fontSize:28,marginBottom:4,display:"block",filter:"grayscale(1)",opacity:.55}}>{a.icon}</div>
+                      <div style={{fontFamily:"var(--fd)",fontSize:13,color:"rgba(255,255,255,.7)",marginBottom:2}}>{a.name}</div>
+                      <div style={{fontSize:9,color:"rgba(255,255,255,.4)",fontWeight:600,marginBottom:7,lineHeight:1.3}}>{a.tagline}</div>
+                      <div style={{fontSize:10,fontWeight:800,color:"#c4b5fd",background:"rgba(124,58,237,.18)",borderRadius:100,padding:"3px 8px",display:"inline-block"}}>Unlocks at age {a.minAge}</div>
+                    </div>
+                  );
+                  return(
+                    <div key={a.ticker} onClick={()=>openTrade(a)} style={{borderRadius:14,padding:14,cursor:"pointer",position:"relative",overflow:"hidden",background:`linear-gradient(135deg,${a.color}bb,${a.color}55)`,border:`1px solid ${a.color}44`,transition:"all .2s"}}>
+                      <div style={{position:"absolute",top:9,right:9,fontSize:9,fontWeight:800,background:"rgba(0,0,0,.25)",padding:"2px 7px",borderRadius:100,color:"rgba(255,255,255,.75)",textTransform:"uppercase"}}>{badgeOf(a)}</div>
+                      <div style={{fontSize:28,marginBottom:4,display:"block"}}>{a.icon}</div>
+                      <div style={{fontFamily:"var(--fd)",fontSize:13,color:"#fff",marginBottom:2}}>{a.name}</div>
+                      <div style={{fontSize:9,color:"rgba(255,255,255,.55)",fontWeight:600,marginBottom:7,lineHeight:1.3}}>{a.tagline}</div>
+                      <div style={{fontSize:14,fontWeight:900,color:"#fff"}}>{fs$(cur)}</div>
+                      <div style={{fontSize:10,fontWeight:700,marginTop:2,color:chg>=0?"#86efac":"#fca5a5"}}>{chg>=0?"▲":"▼"} {Math.abs(chg)}%</div>
+                      <div style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:100,marginTop:5,display:"inline-block",background:a.risk==="low"?"rgba(16,185,129,.25)":a.risk==="medium"?"rgba(245,158,11,.25)":"rgba(239,68,68,.25)",color:a.risk==="low"?"#86efac":a.risk==="medium"?"#fde68a":"#fca5a5"}}>{a.risk==="low"?"🟢 Lower Risk":a.risk==="medium"?"🟠 Medium Risk":"🔴 High Risk"}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              </>);
+            })()}
           </div>
         )}
 
