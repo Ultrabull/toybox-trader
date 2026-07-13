@@ -247,15 +247,16 @@ export function mountSyncUI() {
           <p class="muted" style="margin-bottom:11px">Everything the big kids-money apps teach — <strong style="color:#fff">earn, save &amp; invest</strong> — without the $15/mo debit-card fees. One price, your whole family.</p>
           <div style="background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.25);border-radius:13px;padding:12px 13px;margin-bottom:12px">${feats}</div>
           <div style="display:flex;gap:8px;margin-bottom:11px">
-            <div style="flex:1;border:2px solid #7c3aed;border-radius:13px;padding:11px 8px;text-align:center;background:rgba(124,58,237,.16)">
-              <div style="font-size:10px;font-weight:800;color:#c4b5fd;letter-spacing:.5px">BEST VALUE</div>
-              <div style="font-family:'Fredoka One',cursive;font-size:21px;color:#fff;margin-top:2px">$24.99<span style="font-size:12px;color:rgba(255,255,255,.55)">/yr</span></div>
-              <div style="font-size:10px;color:rgba(255,255,255,.5)">just ~$2 a month</div>
+            <div style="flex:1;border:2px solid #7c3aed;border-radius:13px;padding:11px 8px;text-align:center;background:rgba(124,58,237,.16);position:relative">
+              <div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#7c3aed;color:#fff;font-size:9px;font-weight:800;letter-spacing:.4px;padding:2px 9px;border-radius:100px;white-space:nowrap">SAVE 50%</div>
+              <div style="font-size:10px;font-weight:800;color:#c4b5fd;letter-spacing:.5px;margin-top:3px">BEST VALUE</div>
+              <div style="font-family:'Fredoka One',cursive;font-size:21px;color:#fff;margin-top:2px">$29.99<span style="font-size:12px;color:rgba(255,255,255,.55)">/yr</span></div>
+              <div style="font-size:10px;color:rgba(255,255,255,.5)">just ~$2.50 a month</div>
             </div>
             <div style="flex:1;border:1px solid rgba(255,255,255,.18);border-radius:13px;padding:11px 8px;text-align:center">
-              <div style="font-size:10px;font-weight:800;color:rgba(255,255,255,.5);letter-spacing:.5px">PAY ONCE</div>
-              <div style="font-family:'Fredoka One',cursive;font-size:21px;color:#fff;margin-top:2px">$39.99</div>
-              <div style="font-size:10px;color:rgba(255,255,255,.5)">lifetime — no subscription</div>
+              <div style="font-size:10px;font-weight:800;color:rgba(255,255,255,.5);letter-spacing:.5px">MONTHLY</div>
+              <div style="font-family:'Fredoka One',cursive;font-size:21px;color:#fff;margin-top:2px">$4.99<span style="font-size:12px;color:rgba(255,255,255,.55)">/mo</span></div>
+              <div style="font-size:10px;color:rgba(255,255,255,.5)">cancel anytime</div>
             </div>
           </div>
           <button class="act" id="tbx-plus-unlock" type="button">⭐ Get Toybox Plus</button>

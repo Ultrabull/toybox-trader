@@ -105,10 +105,10 @@ export default function Landing({ onStart }: { onStart: () => void }) {
           <Card style={{ border: `2px solid ${P}`, background: "linear-gradient(135deg,rgba(124,58,237,.18),rgba(245,158,11,.06))" }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
               <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: 18 }}>⭐ Toybox Plus</div>
-              <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: 16, color: "#fff" }}>$24.99<span style={{ fontSize: 11, color: "rgba(255,255,255,.5)" }}>/yr</span></div>
+              <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: 16, color: "#fff" }}>$29.99<span style={{ fontSize: 11, color: "rgba(255,255,255,.5)" }}>/yr</span></div>
             </div>
             <div style={{ fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,.7)", lineHeight: 1.6, marginBottom: 6 }}>All your kids · full allowance &amp; savings match · family gifts · weekly reports · certificate · all themes.</div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: "#c4b5fd" }}>or $39.99 once — lifetime, no subscription</div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "#c4b5fd" }}>or $4.99/month — cancel anytime. Save 50% with yearly.</div>
           </Card>
         </div>
       </div>

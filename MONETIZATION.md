@@ -12,7 +12,7 @@ Telegram nudge, the parent unlocks behind a parental gate, and the kid gets an
 starter lessons (~6), all daily hooks (login bonus, spin, streaks, badges),
 predictions, coin shop, pet, backup codes, single device.
 
-**Toybox Plus (~$2.99/mo or $24.99/yr):** up to 5 kids, cloud sync across
+**Toybox Plus ($4.99/mo or $29.99/yr — save 50%):** up to 5 kids, cloud sync across
 devices, full lesson library, family leaderboard, weekly/monthly parent reports,
 push reminders, 10 daily trades + Investment Club, exclusive cosmetics (pet
 crown, gold name frame), priority support.
@@ -33,10 +33,11 @@ a new badge, topping the leaderboard).
 
 ## Pricing psychology (when you launch)
 - **7-day free trial** — the biggest lever (loss aversion after the taste).
-- **Anchor annual as the deal**: `$3.99/mo` next to `$24.99/yr — save ~48%`.
+- **Anchor annual as the deal**: `$4.99/mo` next to `$29.99/yr — save 50%`.
 - Frame it as *investing in your kid*, not "premium features".
-- A low price ($1) converts easily but likely **underprices** — $2.99–3.99/mo
-  nets far more at similar conversion. Test it.
+- A low price ($1) converts easily but likely **underprices** — $4.99/mo
+  nets far more at similar conversion. Subscription-only (no lifetime) keeps
+  recurring revenue predictable. Test it.
 
 ## To turn on real money (next step, needs dev accounts)
 1. Add in-app purchases: **RevenueCat** (easiest cross-store) or native
