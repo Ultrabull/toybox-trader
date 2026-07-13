@@ -12,7 +12,7 @@ export async function mountPushUI() {
 
   const style = document.createElement("style");
   style.textContent = `
-    #tbx-push-btn{position:fixed;bottom:66px;right:14px;z-index:2147483000;
+    #tbx-push-btn{position:fixed;bottom:calc(128px + env(safe-area-inset-bottom,0px));right:14px;z-index:2147483000;
       width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;
       background:rgba(20,16,40,.72);color:#fff;font-size:20px;line-height:44px;
       box-shadow:0 4px 16px rgba(0,0,0,.4);backdrop-filter:blur(6px);opacity:.85}

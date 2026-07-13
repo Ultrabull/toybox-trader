@@ -449,6 +449,7 @@ const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--fd:'Fredoka One',cursive;--fb:'Nunito',sans-serif;--r:14px;--rl:22px}
 body{font-family:var(--fb);overflow:hidden}
+body[data-flow="auth-mid"] #tbx-sync-btn,body[data-flow="auth-mid"] #tbx-push-btn{display:none!important}
 .app{height:100vh;width:100vw;overflow:hidden;position:relative}
 
 /* Stars */
@@ -708,6 +709,14 @@ export default function ToyboxApp() {
 
   const bg = authUser?.theme ? (THEMES.find(t=>t.id===authUser.theme)?.bg||bgTheme.bg) : bgTheme.bg;
 
+  // Hide the floating ☁️/🔔 buttons during mid-flow auth screens (registration,
+  // PIN, 2FA, celebrate) so they don't float over those cards. They stay
+  // visible on welcome/profiles (for sync sign-in) and the dashboard.
+  useEffect(()=>{
+    const midFlow = ["kid_reg","kid_reg_2fa","kid_pin","kid_login_2fa","celebrate","parent_login"];
+    document.body.dataset.flow = midFlow.includes(screen) ? "auth-mid" : "";
+  },[screen]);
+
   const enterTwoFA = to => { setTwoFACode(genCode()); setScreen(to); };
   const onKidReg   = data => {
     const k = {id:Date.now().toString(),name:data.name,avatar:data.avatar,age:data.age,email:data.email,pin:data.pin,theme:data.theme||"space",cash:1000,coins:50,xp:0,streak:0,joinedAt:new Date().toLocaleDateString("en-US")};
@@ -905,35 +914,50 @@ function PinScreen({kid,onVerified,onBack}){
 }
 
 function TwoFA({email,code,who,isReg,onVerified,onBack}){
-  const r=[useRef(null),useRef(null),useRef(null),useRef(null),useRef(null),useRef(null)];
   const [vals,setVals]=useState(["","","","","",""]);
-  const [err,setErr]=useState("");
-  const [timer,setTimer]=useState(60);
-  useEffect(()=>{const id=setInterval(()=>setTimer(t=>t>0?t-1:0),1000);return()=>clearInterval(id);},[]);
-  const handle=(i,v)=>{if(!/^\d?$/.test(v))return;const n=[...vals];n[i]=v;setVals(n);if(v&&i<5)r[i+1].current?.focus();const joined=n.join("");if(joined.length===6){if(joined===code){setErr("");onVerified();}else{setErr("Oops — not quite! Tap the code below to fill it in 👇");setTimeout(()=>{setVals(["","","","","",""]);r[0].current?.focus();},650);}}else setErr("");};
-  const keyDown=(i,e)=>{if(e.key==="Backspace"&&!vals[i]&&i>0)r[i-1].current?.focus();};
-  const fillCode=()=>{setErr("");setVals(String(code).split(""));setTimeout(onVerified,350);};
+  const [status,setStatus]=useState("waiting"); // waiting | arriving | done
+  const doneRef=useRef(false);
+  const finish=()=>{ if(doneRef.current)return; doneRef.current=true; setStatus("done"); setTimeout(onVerified,700); };
+  // AUTOFILL: kids never type the code. After a short beat, the code "arrives"
+  // and fills itself in digit-by-digit, then verifies automatically.
+  useEffect(()=>{
+    let cancelled=false;
+    const digits=String(code).split("");
+    const t=setTimeout(()=>{
+      if(cancelled)return;
+      setStatus("arriving");
+      digits.forEach((d,i)=>setTimeout(()=>{
+        if(cancelled)return;
+        setVals(v=>{const n=[...v];n[i]=d;return n;});
+        if(i===digits.length-1) setTimeout(()=>{ if(!cancelled) finish(); },500);
+      }, i*190));
+    },1100);
+    return ()=>{ cancelled=true; clearTimeout(t); };
+  },[]);
+  const fillNow=()=>{ if(doneRef.current)return; setVals(String(code).split("")); finish(); }; // tap to skip the wait
   return(
     <div className="page" style={{overflowY:"auto"}}>
       <div className="card">
         <div style={{textAlign:"center",marginBottom:16}}>
           <div style={{fontSize:42,marginBottom:8}}>🔐</div>
           <div className="ttl">Security Lesson!</div>
-          <div className="sub">Practice how <strong style={{color:"#fff"}}>2-Factor Login</strong> keeps you safe — no real email is sent, this is just for learning! 🎓</div>
+          <div className="sub">Watch how <strong style={{color:"#fff"}}>2-Factor Login</strong> keeps you safe — no real email is sent, this is just for learning! 🎓</div>
         </div>
         <div style={{background:"rgba(16,185,129,.1)",border:"1px solid rgba(16,185,129,.25)",borderRadius:13,padding:13,marginBottom:14,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.85)",lineHeight:1.6}}>
           🔐 <strong>Why 2FA?</strong> Even if someone steals your PIN, they can't log in without this code. It's like having two locks on a door. Real apps like Google, Apple and banks all use this — you're learning how the pros stay safe!
         </div>
-        <div style={{fontFamily:"var(--fd)",fontSize:11,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>Enter your 6-digit code</div>
-        <div className="twofa-row">{vals.map((v,i)=><input key={i} ref={r[i]} className={`twofa-inp ${v?"filled":""}`} value={v} maxLength={1} inputMode="numeric" onChange={e=>handle(i,e.target.value)} onKeyDown={e=>keyDown(i,e)}/>)}</div>
-        {err&&<div style={{textAlign:"center",fontSize:12,fontWeight:800,color:"#fca5a5",marginBottom:8}}>❌ {err}</div>}
-        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8}}>👇 Pretend email — in a real app this would land in your inbox. Tap it to fill the code!</div>
-        <div className="email-pop" onClick={fillCode} style={{cursor:"pointer"}}>
+        <div style={{fontFamily:"var(--fd)",fontSize:11,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>Your 6-digit code</div>
+        <div className="twofa-row">{vals.map((v,i)=><input key={i} className={`twofa-inp ${v?"filled":""}`} value={v} readOnly tabIndex={-1}/>)}</div>
+        <div style={{textAlign:"center",fontSize:12,fontWeight:800,marginBottom:8,color:status==="done"?"#86efac":"#c4b5fd"}}>
+          {status==="waiting"?"📩 Your code is on its way…":status==="arriving"?"✨ Filling it in for you…":"✅ Verified! Great job 🎓"}
+        </div>
+        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8}}>👇 Pretend email — in a real app this would land in your inbox. No typing needed!</div>
+        <div className="email-pop" onClick={fillNow} style={{cursor:"pointer"}}>
           <div className="email-hd"><div className="email-logo">🧸</div><div><div style={{fontSize:11,fontWeight:800,color:"#fff"}}>Toybox Trader (pretend)</div><div style={{fontSize:10,color:"rgba(255,255,255,.6)",fontWeight:600}}>demo@toyboxtrader.com → {email}</div></div></div>
           <div className="email-bd">
             <div className="email-sub">🔐 Your practice security code</div>
-            <div className="email-txt">Hi {who}! 👋 Tap this box to fill in your practice code:</div>
-            <div className="email-code-box"><div className="email-code">{code}</div><div style={{fontSize:10,fontWeight:700,color:"#7c3aed",marginTop:4}}>👆 Tap to fill it in automatically</div></div>
+            <div className="email-txt">Hi {who}! 👋 Here's your code — it fills in all by itself:</div>
+            <div className="email-code-box"><div className="email-code">{code}</div><div style={{fontSize:10,fontWeight:700,color:"#7c3aed",marginTop:4}}>✨ Filling in automatically… (tap to skip)</div></div>
             <div className="email-foot">This is why 2FA matters — even if someone has your password, they don't have your email! 🔒</div>
           </div>
         </div>
@@ -2716,7 +2740,7 @@ function KidDash({user,savedState,onLogout}){
           Opens the kid-friendly Get Help form. Hidden during the first-run tour. */}
       {tourDone&&(
         <button onClick={()=>{setBugState("idle");setMoreView("Help");setNav("More");}} title="Report a problem" aria-label="Report a problem"
-          style={{position:"fixed",bottom:118,right:14,zIndex:2147483000,width:44,height:44,borderRadius:"50%",border:"none",cursor:"pointer",background:"rgba(20,16,40,.72)",color:"#fff",fontSize:22,lineHeight:"44px",boxShadow:"0 4px 16px rgba(0,0,0,.4)",backdropFilter:"blur(6px)",opacity:.9,padding:0}}>🐞</button>
+          style={{position:"fixed",bottom:"calc(180px + env(safe-area-inset-bottom,0px))",right:14,zIndex:2147483000,width:44,height:44,borderRadius:"50%",border:"none",cursor:"pointer",background:"rgba(20,16,40,.72)",color:"#fff",fontSize:22,lineHeight:"44px",boxShadow:"0 4px 16px rgba(0,0,0,.4)",backdropFilter:"blur(6px)",opacity:.9,padding:0}}>🐞</button>
       )}
 
       {/* More drawer */}
