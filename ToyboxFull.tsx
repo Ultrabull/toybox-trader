@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { apiUrl } from "./src/api";
+import Landing from "./src/Landing";
 import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS, loadSavings, saveSavings, loadAllowance, saveAllowance, loadFamily, saveFamily, loadGifts, saveGifts } from "./src/tasks";
 
 // ─── Constants ─────────────────────────────────────
@@ -702,7 +703,7 @@ body[data-flow="auth-mid"] #tbx-sync-btn,body[data-flow="auth-mid"] #tbx-push-bt
 // MAIN APP
 // ═══════════════════════════════════════════════════
 export default function ToyboxApp() {
-  const [screen,    setScreen]    = useState("welcome");
+  const [screen,    setScreen]    = useState(()=>{ try{ return localStorage.getItem("toybox:started")?"role_select":"landing"; }catch(e){ return "landing"; } });
   const [kids,      setKids]      = useState([]);
   const [regData,   setRegData]   = useState({});
   const [loginKid,  setLoginKid]  = useState(null);
@@ -732,7 +733,7 @@ export default function ToyboxApp() {
   // PIN, 2FA, celebrate) so they don't float over those cards. They stay
   // visible on welcome/profiles (for sync sign-in) and the dashboard.
   useEffect(()=>{
-    const midFlow = ["kid_reg","kid_reg_2fa","kid_pin","kid_login_2fa","celebrate","parent_login"];
+    const midFlow = ["landing","kid_reg","kid_reg_2fa","kid_pin","kid_login_2fa","celebrate","parent_login"];
     document.body.dataset.flow = midFlow.includes(screen) ? "auth-mid" : "";
   },[screen]);
 
@@ -779,8 +780,9 @@ export default function ToyboxApp() {
       <style>{CSS}</style>
       <div className="app" style={{background:bg}}>
         <Stars/>
+        {screen==="landing"          && <Landing      onStart={()=>{ try{localStorage.setItem("toybox:started","1");}catch(e){} setScreen("role_select"); }}/>}
         {screen==="welcome"          && <Welcome      onNext={()=>setScreen("role_select")}/>}
-        {screen==="role_select"      && <RoleSelect   onKid={()=>setScreen("kid_profiles")} onParent={()=>setScreen("parent_login")} onBack={()=>setScreen("welcome")}/>}
+        {screen==="role_select"      && <RoleSelect   onKid={()=>setScreen("kid_profiles")} onParent={()=>setScreen("parent_login")} onBack={()=>setScreen("landing")}/>}
         {screen==="kid_profiles"     && <KidProfiles  kids={kids} onSelect={k=>{setLoginKid(k);setScreen("kid_pin");}} onNew={()=>{ if(kids.length>=1 && !famPremium){ setKidLimit(true); } else { setScreen("kid_reg"); } }} onBack={()=>setScreen("role_select")} onRestore={onRestore}/>}
         {screen==="kid_reg"          && <KidRegister  regData={regData} setRegData={setRegData} onComplete={d=>{setRegData(d);enterTwoFA("kid_reg_2fa");}} onBack={()=>setScreen("kid_profiles")} setBgTheme={setBgTheme}/>}
         {screen==="kid_reg_2fa"      && <TwoFA        email={regData.email} code={twoFACode} who={regData.name} isReg onVerified={()=>onKidReg(regData)} onBack={()=>setScreen("kid_reg")}/>}
