@@ -150,7 +150,7 @@ export default function Landing({ onStart }: { onStart: () => void }) {
       <div style={{ textAlign: "center", padding: "24px 20px calc(30px + env(safe-area-inset-bottom,0px))", borderTop: "1px solid rgba(255,255,255,.08)", fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,.4)", lineHeight: 1.8 }}>
         <div>🧸 <strong style={{ color: "rgba(255,255,255,.6)" }}>Toybox Trader</strong></div>
         <div style={{ margin: "6px 0" }}>Play money only — an educational simulator, not real trading.</div>
-        <div><a href="/privacy.html" style={{ color: "rgba(167,139,250,.85)", textDecoration: "none" }}>Privacy Policy</a> · <a href="mailto:toyboxtrader.support@gmail.com" style={{ color: "rgba(167,139,250,.85)", textDecoration: "none" }}>Contact</a></div>
+        <div><a href="/privacy.html" style={{ color: "rgba(167,139,250,.85)", textDecoration: "none" }}>Privacy Policy</a> · <a href="/terms.html" style={{ color: "rgba(167,139,250,.85)", textDecoration: "none" }}>Terms</a> · <a href="mailto:toyboxtrader.support@gmail.com" style={{ color: "rgba(167,139,250,.85)", textDecoration: "none" }}>Contact</a></div>
         <div style={{ marginTop: 6, opacity: .7 }}>© 2026 Toybox Trader</div>
       </div>
     </div>
