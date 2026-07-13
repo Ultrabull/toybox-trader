@@ -228,12 +228,39 @@ export function mountSyncUI() {
       const plusBody = panel.querySelector<HTMLElement>("#tbx-plus-body")!;
       const renderPlus = (active: boolean) => {
         if (active) {
-          plusBody.innerHTML = `<div style="font-size:12.5px;color:#6ee7b7;font-weight:800">✓ Toybox Plus is active for your family 🎉</div>`;
+          plusBody.innerHTML = `<div style="font-size:12.5px;color:#6ee7b7;font-weight:800">✓ Toybox Plus is active for your family 🎉<br/><span style="font-weight:600;color:rgba(255,255,255,.6)">Thanks for supporting a money-smart kid! 💜</span></div>`;
           return;
         }
+        const feats = [
+          "👨‍👩‍👧‍👦 Add ALL your kids (free = 1)",
+          "✅ Chores, tasks &amp; custom reward store",
+          "💵 Pocket-money allowance (tracked, never moved)",
+          "🏦 Savings goals with your Parent Match",
+          "💰 Auto-allowance — set &amp; forget",
+          "👵 Family Circle — gifts from grandparents",
+          "📈 Weekly Family Money Report",
+          "🎓 Junior Investor Certificate",
+          "🎨 All themes &amp; avatars",
+        ].map((f) => `<div style="font-size:12.5px;font-weight:700;color:rgba(255,255,255,.88);padding:3px 0;display:flex;gap:7px"><span style="color:#86efac">✓</span><span>${f}</span></div>`).join("");
         plusBody.innerHTML = `
-          <p class="muted">Unlock more lessons, family accounts, the leaderboard, parent reports, and exclusive pet crowns. Your kids get an instant reward when you unlock. 💛</p>
-          <button class="act" id="tbx-plus-unlock" type="button" style="margin-top:8px">⭐ Unlock Toybox Plus</button>
+          <div style="font-family:'Fredoka One',cursive;font-size:15px;color:#fff;margin:2px 0 4px">Raise a money-smart kid 🌱</div>
+          <p class="muted" style="margin-bottom:11px">Everything the big kids-money apps teach — <strong style="color:#fff">earn, save &amp; invest</strong> — without the $15/mo debit-card fees. One price, your whole family.</p>
+          <div style="background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.25);border-radius:13px;padding:12px 13px;margin-bottom:12px">${feats}</div>
+          <div style="display:flex;gap:8px;margin-bottom:11px">
+            <div style="flex:1;border:2px solid #7c3aed;border-radius:13px;padding:11px 8px;text-align:center;background:rgba(124,58,237,.16)">
+              <div style="font-size:10px;font-weight:800;color:#c4b5fd;letter-spacing:.5px">BEST VALUE</div>
+              <div style="font-family:'Fredoka One',cursive;font-size:21px;color:#fff;margin-top:2px">$24.99<span style="font-size:12px;color:rgba(255,255,255,.55)">/yr</span></div>
+              <div style="font-size:10px;color:rgba(255,255,255,.5)">just ~$2 a month</div>
+            </div>
+            <div style="flex:1;border:1px solid rgba(255,255,255,.18);border-radius:13px;padding:11px 8px;text-align:center">
+              <div style="font-size:10px;font-weight:800;color:rgba(255,255,255,.5);letter-spacing:.5px">PAY ONCE</div>
+              <div style="font-family:'Fredoka One',cursive;font-size:21px;color:#fff;margin-top:2px">$39.99</div>
+              <div style="font-size:10px;color:rgba(255,255,255,.5)">lifetime — no subscription</div>
+            </div>
+          </div>
+          <button class="act" id="tbx-plus-unlock" type="button">⭐ Get Toybox Plus</button>
+          <div style="font-size:10.5px;color:rgba(255,255,255,.45);text-align:center;margin-top:8px;line-height:1.55">No ads · Kid-safe · Your kids’ progress is always theirs</div>
+          <div style="font-size:11px;color:#fde68a;font-weight:700;text-align:center;margin-top:8px;line-height:1.5">🎁 Preview: it’s <strong>free to unlock</strong> while we finish setting up billing — thanks for being an early family!</div>
           <div id="tbx-plus-msg" style="font-size:12px;margin-top:8px;min-height:14px"></div>`;
         plusBody.querySelector<HTMLButtonElement>("#tbx-plus-unlock")!.onclick = async () => {
           const msg = plusBody.querySelector<HTMLElement>("#tbx-plus-msg")!;
