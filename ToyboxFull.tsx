@@ -2630,7 +2630,31 @@ function KidDash({user,savedState,onLogout}){
                   {/* Limit price input */}
                   {orderType==="limit"&&(()=>{
                     const nowP = prices[tradeAsset.ticker]||tradeAsset.basePrice;
-                    const exTarget = tradeMode==="buy" ? +(nowP*0.92).toFixed(isCrypto?0:2) : +(nowP*1.15).toFixed(isCrypto?0:2);
+                    // Suggest a SMALL, realistic move so a kid's limit order
+                    // actually fills during play — not an 8–15% swing that
+                    // almost never happens in one sitting.
+                    const dip  = isCrypto ? 0.97 : 0.98;  // buy ~2–3% below now
+                    const rise = isCrypto ? 1.05 : 1.03;  // sell ~3–5% above now
+                    const exTarget = tradeMode==="buy" ? +(nowP*dip).toFixed(isCrypto?0:2) : +(nowP*rise).toFixed(isCrypto?0:2);
+                    const canFillNow = isCrypto || mkt.open;
+                    // Live coaching on whatever the kid typed.
+                    const lp = +limitPrice || 0;
+                    let hint = null;
+                    if(lp>0){
+                      if(tradeMode==="buy"){
+                        if(lp>=nowP) hint={good:true, txt:canFillNow?"✅ This buys right away — your target is at or above today's price!":"✅ Ready! This buys the moment the market opens."};
+                        else { const d=(nowP-lp)/nowP*100;
+                          if(d<=4) hint={good:true, txt:`👍 Great target! A small ${d.toFixed(0)}% dip like this happens a lot — good chance it fills.`};
+                          else if(d<=9) hint={good:false, txt:`⏳ That's a ${d.toFixed(0)}% drop — it might take a while to happen.`};
+                          else hint={good:false, txt:`🐢 That's a BIG ${d.toFixed(0)}% drop — it could wait a very long time. Try a price closer to ${fs$(nowP)}.`}; }
+                      } else {
+                        if(lp<=nowP) hint={good:true, txt:canFillNow?"✅ This sells right away — your target is at or below today's price!":"✅ Ready! This sells the moment the market opens."};
+                        else { const u=(lp-nowP)/nowP*100;
+                          if(u<=5) hint={good:true, txt:`👍 Great target! A small ${u.toFixed(0)}% rise like this happens a lot — good chance it fills.`};
+                          else if(u<=12) hint={good:false, txt:`⏳ That's a ${u.toFixed(0)}% rise — it might take a while to happen.`};
+                          else hint={good:false, txt:`🐢 That's a BIG ${u.toFixed(0)}% jump — it could wait a very long time. Try a price closer to ${fs$(nowP)}.`}; }
+                      }
+                    }
                     return(
                     <div style={{marginTop:10,background:"rgba(124,58,237,.08)",border:"1px solid rgba(124,58,237,.2)",borderRadius:11,padding:12}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -2645,14 +2669,15 @@ function KidDash({user,savedState,onLogout}){
                       <div style={{background:"rgba(0,0,0,.2)",borderRadius:9,padding:"9px 11px",marginBottom:9,fontSize:11,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.6}}>
                         💡 <strong style={{color:"#c4b5fd"}}>Example:</strong> {tradeAsset.name} is {fs$(nowP)} right now.
                         {tradeMode==="buy"
-                          ?<> Set your target to <strong style={{color:"#fff"}}>{fs$(exTarget)}</strong>. If it drops that low while you're at school, we buy it for you automatically — like leaving a note: "grab it when it's on sale!"</>
-                          :<> Set your target to <strong style={{color:"#fff"}}>{fs$(exTarget)}</strong>. If it climbs that high, we sell automatically and lock in your profit — even if you're asleep!</>}
+                          ?<> A good target is <strong style={{color:"#fff"}}>{fs$(exTarget)}</strong> — just a little below. If it dips that low while you're at school, we buy it for you automatically — like a note saying "grab it when it's on sale!"</>
+                          :<> A good target is <strong style={{color:"#fff"}}>{fs$(exTarget)}</strong> — just a little above. If it climbs that high, we sell automatically and lock in your profit — even if you're asleep!</>}
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
                         <span style={{fontSize:13,fontWeight:800,color:"rgba(255,255,255,.6)"}}>Target $</span>
                         <input type="number" value={limitPrice} onChange={e=>setLimitPrice(+e.target.value)} step={isCrypto?100:1} style={{flex:1,padding:"10px 12px",borderRadius:10,border:"1.5px solid rgba(255,255,255,.2)",background:"rgba(255,255,255,.08)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,outline:"none"}}/>
-                        <button onClick={()=>setLimitPrice(exTarget)} style={{flexShrink:0,padding:"8px 10px",borderRadius:9,border:"1px solid rgba(124,58,237,.4)",background:"rgba(124,58,237,.2)",color:"#c4b5fd",fontSize:10,fontWeight:800,cursor:"pointer"}}>Use {fs$(exTarget)}</button>
+                        <button onClick={()=>setLimitPrice(exTarget)} style={{flexShrink:0,padding:"8px 10px",borderRadius:9,border:"1px solid rgba(124,58,237,.4)",background:"rgba(124,58,237,.2)",color:"#c4b5fd",fontSize:11,fontWeight:800,cursor:"pointer"}}>Use {fs$(exTarget)}</button>
                       </div>
+                      {hint&&<div style={{fontSize:12,fontWeight:800,color:hint.good?"#86efac":"#fcd34d",background:hint.good?"rgba(16,185,129,.12)":"rgba(245,158,11,.12)",border:`1px solid ${hint.good?"rgba(16,185,129,.3)":"rgba(245,158,11,.3)"}`,borderRadius:9,padding:"8px 10px",marginTop:8,lineHeight:1.45}}>{hint.txt}</div>}
                       <div style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,.4)",marginTop:6}}>Now: {fs$(nowP)} · Your order waits until the target is hit (even while you're at school!).</div>
                     </div>
                     );
