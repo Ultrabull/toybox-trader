@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { apiUrl } from "./src/api";
-import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS, loadSavings, saveSavings } from "./src/tasks";
+import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS, loadSavings, saveSavings, loadAllowance, saveAllowance, loadFamily, saveFamily, loadGifts, saveGifts } from "./src/tasks";
 
 // ─── Constants ─────────────────────────────────────
 const AVATARS = ["🚀","🦁","⚡","🐉","🦊","🐼","🦋","🎮","🏆","🌟","🦅","🐯","🐬","🦄","🐸","🎸","🧙","🎯","🐺","🦈"];
@@ -9,6 +9,10 @@ const THEMES  = [
   {id:"forest", label:"Enchanted Forest", bg:"linear-gradient(160deg,#021a0e 0%,#052e16 50%,#021a0e 100%)", accent:"#10b981", card:"rgba(16,185,129,.12)"},
   {id:"neon",   label:"Neon Cyberpunk",   bg:"linear-gradient(160deg,#050014 0%,#120030 50%,#050014 100%)", accent:"#06b6d4", card:"rgba(6,182,212,.12)"},
   {id:"ocean",  label:"Underwater World", bg:"linear-gradient(160deg,#050f2e 0%,#0c2a4a 50%,#050f2e 100%)", accent:"#38bdf8", card:"rgba(56,189,248,.12)"},
+  {id:"sunset", label:"Sunset Vibes",     bg:"linear-gradient(160deg,#2a0a1e 0%,#4a1226 50%,#1a0512 100%)", accent:"#fb7185", card:"rgba(251,113,133,.12)"},
+  {id:"candy",  label:"Candy Land",       bg:"linear-gradient(160deg,#2a0a2e 0%,#3d1247 50%,#180520 100%)", accent:"#e879f9", card:"rgba(232,121,249,.12)"},
+  {id:"lava",   label:"Volcano",          bg:"linear-gradient(160deg,#2a0e06 0%,#4a1c0a 50%,#1a0805 100%)", accent:"#f97316", card:"rgba(249,115,22,.12)"},
+  {id:"gold",   label:"Golden Lux",       bg:"linear-gradient(160deg,#241c05 0%,#3a2e0a 50%,#140f03 100%)", accent:"#fbbf24", card:"rgba(251,191,36,.12)"},
 ];
 const PIN_CORRECT = "1234";
 const genCode = () => Math.floor(100000 + Math.random()*900000).toString();
@@ -408,8 +412,18 @@ const SPIN_PRIZES = [
 const SHOP_ITEMS = [
   {id:"theme_neon",   icon:"🌃", name:"Neon Theme",        desc:"Unlock the Neon Cyberpunk look",       cost:200, type:"theme"},
   {id:"theme_ocean",  icon:"🌊", name:"Ocean Theme",       desc:"Unlock the Underwater World look",      cost:200, type:"theme"},
+  {id:"theme_sunset", icon:"🌅", name:"Sunset Theme",      desc:"Warm pink sunset vibes",                cost:200, type:"theme"},
+  {id:"theme_candy",  icon:"🍭", name:"Candy Theme",       desc:"Sweet candy-land colors",               cost:200, type:"theme"},
+  {id:"theme_lava",   icon:"🌋", name:"Volcano Theme",     desc:"Fiery orange volcano look",             cost:250, type:"theme"},
+  {id:"theme_gold",   icon:"✨", name:"Golden Theme",      desc:"Shiny gold luxury look",                cost:400, type:"theme"},
   {id:"avatar_dragon",icon:"🐉", name:"Dragon Avatar",     desc:"A legendary dragon profile icon",       cost:150, type:"avatar"},
   {id:"avatar_unicorn",icon:"🦄",name:"Unicorn Avatar",    desc:"A magical unicorn profile icon",        cost:150, type:"avatar"},
+  {id:"avatar_robot", icon:"🤖", name:"Robot Avatar",      desc:"A cool robot profile icon",             cost:150, type:"avatar"},
+  {id:"avatar_alien", icon:"👽", name:"Alien Avatar",      desc:"An out-of-this-world profile icon",     cost:150, type:"avatar"},
+  {id:"avatar_ninja", icon:"🥷", name:"Ninja Avatar",      desc:"A stealthy ninja profile icon",         cost:150, type:"avatar"},
+  {id:"avatar_wizard",icon:"🧙", name:"Wizard Avatar",     desc:"A magical wizard profile icon",         cost:150, type:"avatar"},
+  {id:"avatar_king",  icon:"🤴", name:"Prince Avatar",     desc:"A royal profile icon",                  cost:200, type:"avatar"},
+  {id:"avatar_star",  icon:"🌟", name:"Superstar Avatar",  desc:"Shine bright like a star",              cost:300, type:"avatar"},
   {id:"pet_hat",      icon:"🎩", name:"Top Hat for Pet",   desc:"Dress up your trading buddy",           cost:100, type:"cosmetic"},
   {id:"pet_crown",    icon:"👑", name:"Crown for Pet",     desc:"Make your buddy royalty",               cost:250, type:"cosmetic"},
   {id:"frame_gold",   icon:"🏅", name:"Gold Name Frame",   desc:"Golden glow around your leaderboard name",cost:300,type:"cosmetic"},
@@ -1083,6 +1097,8 @@ function KidDash({user,savedState,onLogout}){
   const [savings,     setSavings]     = useState(null);                          // {name,target,saved,matchPct} or null
   const [goalName,    setGoalName]    = useState("");
   const [goalTarget,  setGoalTarget]  = useState(100);
+  const [gifts,       setGifts]       = useState([]);                            // family gifts waiting for this kid
+  const [showCert,    setShowCert]    = useState(false);                         // certificate modal
   const [lesson,       setLesson]      = useState(null);   // lesson modal
   const [lessonSlide,  setLessonSlide] = useState(0);
   const [lessonProgress,setLessonProg]= useState({});     // saved progress per lesson
@@ -1292,7 +1308,7 @@ function KidDash({user,savedState,onLogout}){
       setOwned(o=>[...o,item.id]);
       // Auto-equip avatars/themes the moment they're bought, so the change is visible immediately
       if(item.type==="avatar") setEquipAvatar(item.icon);
-      if(item.type==="theme"){ const map={theme_neon:"neon",theme_ocean:"ocean"}; if(map[item.id]) setEquipTheme(map[item.id]); }
+      if(item.type==="theme"){ const tid=item.id.replace("theme_",""); if(THEMES.find(t=>t.id===tid)) setEquipTheme(tid); }
     }
     setCoins(c=>c-item.cost);
     setShopMsg(`Bought ${item.name}! ${item.type==="avatar"?"Now wearing it! 🎉":item.type==="theme"?"Theme applied! 🎉":item.consumable?"":"🎉"}`);
@@ -1303,7 +1319,7 @@ function KidDash({user,savedState,onLogout}){
   // Equip an already-owned avatar/theme (lets kids switch between ones they own)
   const equipItem = (item) => {
     if(item.type==="avatar") setEquipAvatar(item.icon);
-    if(item.type==="theme"){ const map={theme_neon:"neon",theme_ocean:"ocean"}; if(map[item.id]) setEquipTheme(map[item.id]); }
+    if(item.type==="theme"){ const tid=item.id.replace("theme_",""); if(THEMES.find(t=>t.id===tid)) setEquipTheme(tid); }
     setShopMsg(`Now using ${item.name}! ✨`); fx("coin",15); setTimeout(()=>setShopMsg(null),2000);
   };
 
@@ -1335,7 +1351,26 @@ function KidDash({user,savedState,onLogout}){
     const o = await loadOwed(); setOwed(o[user?.id]||0);
     const s = await loadSettings(); setTtEnabled(!!s.togetherTime);
     const sv = await loadSavings(); setSavings(sv[user?.id]||null);
+    const gf = await loadGifts(); setGifts(gf.filter(g=>g.kidId===user?.id && !g.collected));
   };
+  const collectGift = (gift) => {
+    (async()=>{ const gf=await loadGifts(); const g2=gf.find(g=>g.id===gift.id); if(g2){ g2.collected=true; await saveGifts(gf); } setGifts(gf.filter(g=>g.kidId===user?.id && !g.collected)); })();
+    if(gift.coins>0) setCoins(c=>c+gift.coins);
+    fx("reward",30);
+    setTaskCelebrate({emoji:gift.emoji||"🎁",title:`${gift.from} sent you a gift!`,label:gift.message||"",coins:gift.coins>0?gift.coins:undefined});
+  };
+  // Auto-allowance — credits once a week automatically (Plus, set by parent).
+  useEffect(()=>{ (async()=>{
+    if(!hydrated || !user?.id) return;
+    const a=await loadAllowance(); const mine=a[user.id];
+    if(!mine || !mine.enabled || !(mine.amount>0)) return;
+    const today=new Date().toDateString();
+    const due = !mine.lastPaid || Math.round((Date.parse(today)-Date.parse(mine.lastPaid))/86400000) >= 7;
+    if(!due) return;
+    mine.lastPaid=today; a[user.id]=mine; await saveAllowance(a); fx("reward",30);
+    if(mine.type==="coins"){ setCoins(c=>c+mine.amount); setTaskCelebrate({emoji:"💰",title:"Your weekly allowance arrived!",coins:mine.amount}); }
+    else { const o=await loadOwed(); o[user.id]=(o[user.id]||0)+mine.amount; await saveOwed(o); setOwed(o[user.id]); setTaskCelebrate({emoji:"💵",title:"Your weekly allowance arrived!",label:`+${fs$(mine.amount)} pocket money — ask your grown-up!`}); }
+  })(); },[hydrated]);
   const setSavingsGoal = () => {
     const name=goalName.trim(); if(!name) return;
     (async()=>{ const sv=await loadSavings(); const prev=sv[user?.id]; sv[user?.id]={name,target:Math.max(10,+goalTarget||10),saved:prev?.saved||0,matchPct:prev?.matchPct||0}; await saveSavings(sv); setSavings(sv[user?.id]); })();
@@ -2241,6 +2276,12 @@ function KidDash({user,savedState,onLogout}){
                 </div>
               </div>
             </div>
+            {/* Certificate — Plus */}
+            <button onClick={()=>{ if(isPremium) setShowCert(true); else setShowPlus(true); }} style={{width:"100%",marginBottom:18,padding:"13px 15px",borderRadius:15,border:"1px solid rgba(124,58,237,.35)",background:"linear-gradient(135deg,rgba(124,58,237,.18),rgba(245,158,11,.08))",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:26}}>🎓</span>
+              <div style={{flex:1,textAlign:"left"}}><div>My Junior Investor Certificate</div><div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.6)"}}>{doneLesson.length>=LESSONS.length?"All lessons done — get your certificate!":`${doneLesson.length}/${LESSONS.length} lessons — printable when you're a Plus member`}</div></div>
+              <span style={{fontSize:10,fontWeight:800,background:"rgba(124,58,237,.3)",color:"#c4b5fd",padding:"3px 9px",borderRadius:100,flexShrink:0}}>⭐ PLUS</span>
+            </button>
             {/* Adventure map */}
             <div className="map-wrap">
               <div className="map-path"/>
@@ -2338,6 +2379,17 @@ function KidDash({user,savedState,onLogout}){
                     <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#86efac"}}>{fs$(owed)} pocket money</div><div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.6)"}}>Your grown-up is keeping this for you — ask them for it! 🙂</div></div>
                   </div>
                 )}
+
+                {/* Family gifts */}
+                {gifts.map(g=>(
+                  <div key={g.id} style={{background:"linear-gradient(135deg,rgba(236,72,153,.16),rgba(124,58,237,.06))",border:"1px solid rgba(236,72,153,.35)",borderRadius:14,padding:14,marginBottom:12}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                      <span style={{fontSize:30}}>{g.emoji||"🎁"}</span>
+                      <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff"}}>A gift from {g.from}! 💛</div>{g.message&&<div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.7)",fontStyle:"italic"}}>“{g.message}”</div>}</div>
+                    </div>
+                    <button onClick={()=>collectGift(g)} style={{width:"100%",padding:11,borderRadius:11,border:"none",background:"linear-gradient(135deg,#ec4899,#db2777)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>{g.coins>0?`🎉 Open gift (+${g.coins} coins!)`:"🎉 Open gift"}</button>
+                  </div>
+                ))}
 
                 {myTasks.length===0&&store.length===0&&(
                   <div style={{background:"rgba(255,255,255,.05)",border:"1px dashed rgba(255,255,255,.18)",borderRadius:16,padding:22,textAlign:"center"}}>
@@ -2980,6 +3032,30 @@ function KidDash({user,savedState,onLogout}){
 
       </div>{/* end main */}
 
+      {/* Junior Investor Certificate (Plus) */}
+      {showCert&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:18,overflowY:"auto"}} onClick={()=>setShowCert(false)}>
+          <div onClick={e=>e.stopPropagation()} style={{maxWidth:400,width:"100%"}}>
+            <div id="tbx-cert" style={{background:"linear-gradient(135deg,#fdf6e3,#fff)",borderRadius:18,padding:"28px 22px",textAlign:"center",border:"8px double #b8860b",color:"#3a2e0a"}}>
+              <div style={{fontSize:44,marginBottom:6}}>🎓</div>
+              <div style={{fontFamily:"var(--fd)",fontSize:22,color:"#8a6d0b",letterSpacing:".5px"}}>Certificate of Achievement</div>
+              <div style={{fontSize:12,fontWeight:800,color:"#b8860b",textTransform:"uppercase",letterSpacing:"1px",margin:"6px 0 16px"}}>Junior Investor</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#6b5a1e"}}>This certifies that</div>
+              <div style={{fontFamily:"var(--fd)",fontSize:28,color:"#3a2e0a",margin:"6px 0"}}>{user?.name}</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#6b5a1e",lineHeight:1.6,margin:"10px 16px"}}>has completed <strong>{doneLesson.length} of {LESSONS.length}</strong> money lessons, learned to save, invest and grow a Money Garden, and is officially a smart young investor! 🌱📈</div>
+              <div style={{display:"flex",justifyContent:"space-around",marginTop:18,fontSize:11,fontWeight:800,color:"#8a6d0b"}}>
+                <div>⭐ Level {lv}</div><div>🪙 {coins} coins</div><div>🔥 {streak}d streak</div>
+              </div>
+              <div style={{marginTop:16,paddingTop:12,borderTop:"1px solid #d9c88a",fontSize:11,fontWeight:700,color:"#8a6d0b"}}>🧸 Toybox Trader · Junior Investor Program</div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:12}}>
+              <button onClick={()=>window.print()} style={{flex:1,padding:13,borderRadius:13,border:"none",background:"linear-gradient(135deg,#f59e0b,#f97316)",color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer"}}>🖨️ Print / Save</button>
+              <button onClick={()=>setShowCert(false)} style={{flex:1,padding:13,borderRadius:13,border:"1px solid rgba(255,255,255,.2)",background:"rgba(255,255,255,.1)",color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer"}}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Task/reward celebration */}
       {taskCelebrate&&(
         <div className="reward-ov" onClick={()=>setTaskCelebrate(null)}>
@@ -3542,6 +3618,9 @@ function ParentDash({kids,onResetKid,onLogout}){
   // Pocket-money ledger + Together Time + savings match + premium
   const [owed,setOwed]=useState({}); const [tt,setTt]=useState(false); const [requests,setRequests]=useState([]);
   const [savings,setSavingsMap]=useState({}); const [prem,setPrem]=useState(false);
+  const [allowance,setAllowance]=useState({}); const [members,setMembers]=useState([]);
+  const [mName,setMName]=useState(""); const [mEmoji,setMEmoji]=useState("👵");
+  const [giftFrom,setGiftFrom]=useState(""); const [giftKid,setGiftKid]=useState(""); const [giftCoins,setGiftCoins]=useState(20); const [giftMsg,setGiftMsg]=useState("");
 
   // Load each kid's saved state to show real performance
   useEffect(()=>{ (async()=>{
@@ -3549,8 +3628,12 @@ function ParentDash({kids,onResetKid,onLogout}){
     for(const k of kids){ const st=await loadData(stateKey(k.id)); if(st) out[k.id]=st; }
     setKidStates(out);
   })(); },[kids]);
-  useEffect(()=>{ (async()=>{ setTasks(await loadTasks()); setStore(await loadStore()); setClaims(await loadClaims()); setOwed(await loadOwed()); setTt(!!(await loadSettings()).togetherTime); setRequests(await loadRequests()); setSavingsMap(await loadSavings()); const r=await loadData("toybox:family:premium"); setPrem(r===true||r==="1"||r===1); })(); },[]);
+  useEffect(()=>{ (async()=>{ setTasks(await loadTasks()); setStore(await loadStore()); setClaims(await loadClaims()); setOwed(await loadOwed()); setTt(!!(await loadSettings()).togetherTime); setRequests(await loadRequests()); setSavingsMap(await loadSavings()); setAllowance(await loadAllowance()); setMembers(await loadFamily()); const r=await loadData("toybox:family:premium"); setPrem(r===true||r==="1"||r===1); })(); },[]);
   const setMatch=(kidId,pct)=>{ const sv={...savings}; if(sv[kidId]){ sv[kidId]={...sv[kidId],matchPct:pct}; setSavingsMap(sv); saveSavings(sv); } };
+  const setAllow=(kidId,patch)=>{ const a={...allowance}; a[kidId]={amount:20,type:"coins",enabled:false,...(a[kidId]||{}),...patch}; setAllowance(a); saveAllowance(a); };
+  const addMember=()=>{ const name=mName.trim(); if(!name) return; const next=[...members,{id:uid(),name,emoji:mEmoji||"👤"}]; setMembers(next); saveFamily(next); setMName(""); if(!giftFrom) setGiftFrom(name); };
+  const delMember=(id)=>{ const next=members.filter(m=>m.id!==id); setMembers(next); saveFamily(next); };
+  const sendGift=()=>{ if(!giftKid||!giftFrom) return; (async()=>{ const g=await loadGifts(); g.unshift({id:uid(),kidId:giftKid,from:giftFrom,emoji:"🎁",coins:Math.max(0,+giftCoins||0),message:giftMsg.trim(),at:Date.now()}); await saveGifts(g); })(); try{ window.toyboxSync?.notify?.(`🎁 ${giftFrom} sent ${kidName(giftKid)} a gift! They'll open it in Toybox.`); }catch(e){} setGiftMsg(""); };
   useEffect(()=>{ if(!nKid && kids.length) setNKid(kids[0].id); },[kids]);
   const toggleTt=()=>{ const v=!tt; setTt(v); saveSettings({togetherTime:v}); };
   const markPaid=(kidId)=>{ const o={...owed,[kidId]:0}; setOwed(o); saveOwed(o); };
@@ -3897,6 +3980,72 @@ function ParentDash({kids,onResetKid,onLogout}){
                   </div>
                 );
               })}
+            </div>
+
+            {/* Auto-Allowance — PLUS */}
+            <div style={{background:"rgba(16,185,129,.08)",border:"1px solid rgba(16,185,129,.25)",borderRadius:16,padding:15,marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>💰 Auto-Allowance</div>
+                <span style={{fontSize:10,fontWeight:800,background:"rgba(124,58,237,.3)",color:"#c4b5fd",padding:"2px 8px",borderRadius:100}}>⭐ PLUS</span>
+              </div>
+              <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,marginBottom:12}}>A weekly allowance that lands automatically — no reminders. Teaches kids to make money last the week. 📅</div>
+              {!prem?(
+                <div style={{background:"rgba(124,58,237,.1)",border:"1px solid rgba(124,58,237,.25)",borderRadius:12,padding:13,textAlign:"center",fontSize:12,fontWeight:800,color:"#c4b5fd",lineHeight:1.5}}>Unlock <strong style={{color:"#fff"}}>Toybox Plus</strong> to set up auto-allowance. Tap ☁️ → Toybox Plus.</div>
+              ):kids.map(k=>{ const a=allowance[k.id]||{amount:20,type:"coins",enabled:false}; return(
+                <div key={k.id} style={{background:"rgba(255,255,255,.05)",borderRadius:12,padding:12,marginBottom:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:a.enabled?10:0}}>
+                    <span style={{fontSize:20}}>{k.avatar}</span>
+                    <div style={{flex:1}}><div style={{fontSize:13,fontWeight:800,color:"#fff"}}>{k.name}</div><div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)"}}>{a.enabled?`${a.type==="money"?"$":""}${a.amount}${a.type==="coins"?" 🪙":""} every week`:"Off"}</div></div>
+                    <button onClick={()=>setAllow(k.id,{enabled:!a.enabled})} aria-label={`allowance ${k.name}`} style={{flexShrink:0,width:50,height:28,borderRadius:100,border:"none",background:a.enabled?"#10b981":"rgba(255,255,255,.15)",position:"relative",cursor:"pointer"}}><span style={{position:"absolute",top:3,left:a.enabled?25:3,width:22,height:22,borderRadius:"50%",background:"#fff",transition:"left .2s"}}/></button>
+                  </div>
+                  {a.enabled&&(
+                    <div>
+                      <div style={{display:"flex",gap:6,marginBottom:6}}>
+                        <button onClick={()=>setAllow(k.id,{type:"coins"})} style={{flex:1,padding:"7px",borderRadius:9,border:`1.5px solid ${a.type==="coins"?"rgba(245,158,11,.5)":"rgba(255,255,255,.14)"}`,background:a.type==="coins"?"rgba(245,158,11,.14)":"transparent",color:a.type==="coins"?"#fde68a":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>🪙 Coins</button>
+                        <button onClick={()=>setAllow(k.id,{type:"money"})} style={{flex:1,padding:"7px",borderRadius:9,border:`1.5px solid ${a.type==="money"?"rgba(16,185,129,.5)":"rgba(255,255,255,.14)"}`,background:a.type==="money"?"rgba(16,185,129,.14)":"transparent",color:a.type==="money"?"#86efac":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>💵 Money</button>
+                      </div>
+                      <div style={{display:"flex",gap:6}}>
+                        {(a.type==="money"?[1,2,5,10]:[10,20,50,100]).map(n=>(<button key={n} onClick={()=>setAllow(k.id,{amount:n})} style={{flex:1,padding:"7px",borderRadius:9,border:`1.5px solid ${a.amount===n?"rgba(255,255,255,.4)":"rgba(255,255,255,.14)"}`,background:a.amount===n?"rgba(255,255,255,.12)":"transparent",color:a.amount===n?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>{a.type==="money"?`$${n}`:n}</button>))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );})}
+            </div>
+
+            {/* Family Circle — PLUS */}
+            <div style={{background:"rgba(236,72,153,.08)",border:"1px solid rgba(236,72,153,.25)",borderRadius:16,padding:15,marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>👵 Family Circle</div>
+                <span style={{fontSize:10,fontWeight:800,background:"rgba(124,58,237,.3)",color:"#c4b5fd",padding:"2px 8px",borderRadius:100}}>⭐ PLUS</span>
+              </div>
+              <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,marginBottom:12}}>Add grandparents, aunts &amp; uncles, then send the kids a gift of coins and a sweet message from them! 💛</div>
+              {!prem?(
+                <div style={{background:"rgba(124,58,237,.1)",border:"1px solid rgba(124,58,237,.25)",borderRadius:12,padding:13,textAlign:"center",fontSize:12,fontWeight:800,color:"#c4b5fd",lineHeight:1.5}}>Unlock <strong style={{color:"#fff"}}>Toybox Plus</strong> for the family circle. Tap ☁️ → Toybox Plus.</div>
+              ):(<>
+                {members.map(m=>(<div key={m.id} style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.06)",borderRadius:100,padding:"5px 10px",margin:"0 6px 6px 0"}}><span>{m.emoji}</span><span style={{fontSize:12,fontWeight:800,color:"#fff"}}>{m.name}</span><button onClick={()=>delMember(m.id)} style={{background:"none",border:"none",color:"rgba(255,255,255,.4)",fontSize:13,cursor:"pointer",padding:0}}>✕</button></div>))}
+                <div style={{display:"flex",gap:6,marginTop:members.length?4:0,marginBottom:12}}>
+                  <input value={mEmoji} onChange={e=>setMEmoji(e.target.value.slice(0,2))} style={{width:46,padding:"9px",borderRadius:10,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:18,textAlign:"center",boxSizing:"border-box"}}/>
+                  <input value={mName} onChange={e=>setMName(e.target.value)} placeholder="e.g. Grandma" style={{flex:1,padding:"9px 11px",borderRadius:10,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:13,fontWeight:600,boxSizing:"border-box"}}/>
+                  <button onClick={addMember} disabled={!mName.trim()} style={{padding:"9px 13px",borderRadius:10,border:"none",background:mName.trim()?"rgba(236,72,153,.3)":"rgba(255,255,255,.08)",color:mName.trim()?"#fff":"rgba(255,255,255,.4)",fontFamily:"var(--fd)",fontSize:13,cursor:mName.trim()?"pointer":"default"}}>+ Add</button>
+                </div>
+                {members.length>0&&kids.length>0&&(
+                  <div style={{borderTop:"1px solid rgba(255,255,255,.08)",paddingTop:12}}>
+                    <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.45)",marginBottom:6}}>SEND A GIFT</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                      {members.map(m=>(<button key={m.id} onClick={()=>setGiftFrom(m.name)} style={{padding:"6px 11px",borderRadius:100,border:`1.5px solid ${giftFrom===m.name?"rgba(236,72,153,.5)":"rgba(255,255,255,.14)"}`,background:giftFrom===m.name?"rgba(236,72,153,.16)":"transparent",color:giftFrom===m.name?"#fff":"rgba(255,255,255,.5)",fontSize:12,fontWeight:800,cursor:"pointer"}}>{m.emoji} {m.name}</button>))}
+                    </div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                      {kids.map(k=>(<button key={k.id} onClick={()=>setGiftKid(k.id)} style={{padding:"6px 11px",borderRadius:100,border:`1.5px solid ${giftKid===k.id?"rgba(16,185,129,.5)":"rgba(255,255,255,.14)"}`,background:giftKid===k.id?"rgba(16,185,129,.16)":"transparent",color:giftKid===k.id?"#fff":"rgba(255,255,255,.5)",fontSize:12,fontWeight:800,cursor:"pointer"}}>{k.avatar} {k.name}</button>))}
+                    </div>
+                    <div style={{display:"flex",gap:6,marginBottom:8}}>
+                      {[0,10,25,50].map(n=>(<button key={n} onClick={()=>setGiftCoins(n)} style={{flex:1,padding:"7px",borderRadius:9,border:`1.5px solid ${giftCoins===n?"rgba(245,158,11,.5)":"rgba(255,255,255,.14)"}`,background:giftCoins===n?"rgba(245,158,11,.14)":"transparent",color:giftCoins===n?"#fde68a":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>{n===0?"No coins":`${n}🪙`}</button>))}
+                    </div>
+                    <input value={giftMsg} onChange={e=>setGiftMsg(e.target.value)} maxLength={100} placeholder="A sweet message… (e.g. So proud of you!)" style={{width:"100%",padding:"10px 12px",borderRadius:11,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:13,fontWeight:600,marginBottom:8,boxSizing:"border-box"}}/>
+                    <button onClick={sendGift} disabled={!giftFrom||!giftKid} style={{width:"100%",padding:12,borderRadius:12,border:"none",background:(giftFrom&&giftKid)?"linear-gradient(135deg,#ec4899,#db2777)":"rgba(255,255,255,.1)",color:(giftFrom&&giftKid)?"#fff":"rgba(255,255,255,.4)",fontFamily:"var(--fd)",fontSize:14,cursor:(giftFrom&&giftKid)?"pointer":"default"}}>💛 Send gift</button>
+                  </div>
+                )}
+              </>)}
             </div>
           </>)}
         </>)}

@@ -75,6 +75,23 @@ const SAVINGS_KEY = "toybox:savings:v1";
 export const loadSavings = () => load<Record<string, Savings>>(SAVINGS_KEY, {});
 export const saveSavings = (s: Record<string, Savings>) => save(SAVINGS_KEY, s);
 
+// Auto-allowance (Plus) — a weekly allowance that credits automatically.
+// { [kidId]: { amount, type:"coins"|"money", enabled, lastPaid(dateString) } }
+export type Allowance = { amount: number; type: "coins" | "money"; enabled: boolean; lastPaid?: string };
+const ALLOWANCE_KEY = "toybox:allowance:v1";
+export const loadAllowance = () => load<Record<string, Allowance>>(ALLOWANCE_KEY, {});
+export const saveAllowance = (a: Record<string, Allowance>) => save(ALLOWANCE_KEY, a);
+
+// Family Circle (Plus) — extra family members + gifts they send to kids.
+export type Member = { id: string; name: string; emoji: string };
+export type Gift = { id: string; kidId: string; from: string; emoji: string; coins: number; message: string; at: number; collected?: boolean };
+const FAMILY_KEY = "toybox:family:members";
+const GIFTS_KEY = "toybox:gifts:v1";
+export const loadFamily = () => load<Member[]>(FAMILY_KEY, []);
+export const saveFamily = (m: Member[]) => save(FAMILY_KEY, m);
+export const loadGifts = () => load<Gift[]>(GIFTS_KEY, []);
+export const saveGifts = (g: Gift[]) => save(GIFTS_KEY, g);
+
 // Family settings (e.g., whether kids can send "Together Time" requests).
 export type Settings = { togetherTime: boolean };
 const SETTINGS_KEY = "toybox:family:settings";
