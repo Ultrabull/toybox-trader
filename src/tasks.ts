@@ -67,6 +67,14 @@ const OWED_KEY = "toybox:pocketmoney:v1";
 export const loadOwed = () => load<Record<string, number>>(OWED_KEY, {});
 export const saveOwed = (o: Record<string, number>) => save(OWED_KEY, o);
 
+// Savings goals with optional PARENT MATCH (Plus). Family-shared so the parent
+// sets the match % and the kid saves toward the goal. matchPct is coins added
+// per 100 coins deposited (e.g. 25 = +25%). "saved" is in-app coins only.
+export type Savings = { name: string; target: number; saved: number; matchPct: number };
+const SAVINGS_KEY = "toybox:savings:v1";
+export const loadSavings = () => load<Record<string, Savings>>(SAVINGS_KEY, {});
+export const saveSavings = (s: Record<string, Savings>) => save(SAVINGS_KEY, s);
+
 // Family settings (e.g., whether kids can send "Together Time" requests).
 export type Settings = { togetherTime: boolean };
 const SETTINGS_KEY = "toybox:family:settings";

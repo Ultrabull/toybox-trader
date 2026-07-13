@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { apiUrl } from "./src/api";
-import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS } from "./src/tasks";
+import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS, loadSavings, saveSavings } from "./src/tasks";
 
 // ─── Constants ─────────────────────────────────────
 const AVATARS = ["🚀","🦁","⚡","🐉","🦊","🐼","🦋","🎮","🏆","🌟","🦅","🐯","🐬","🦄","🐸","🎸","🧙","🎯","🐺","🦈"];
@@ -697,11 +697,15 @@ export default function ToyboxApp() {
   const [savedState,setSavedState]= useState(null);  // loaded kid state for resume
   const [bgTheme,   setBgTheme]   = useState(THEMES[0]);
   const [loaded,    setLoaded]    = useState(false);
+  const [famPremium,setFamPremium]= useState(false);   // Toybox Plus (family flag)
+  const [kidLimit,  setKidLimit]  = useState(false);    // "1 kid on free plan" modal
 
-  // Load registered kids from storage on first load
+  // Load registered kids + premium flag from storage on first load
   useEffect(()=>{ (async()=>{
     const reg = await loadData(KIDS_KEY);
     if(reg && Array.isArray(reg)) setKids(reg);
+    const r = await loadData("toybox:family:premium");
+    setFamPremium(r===true||r==="1"||r===1);
     setLoaded(true);
   })(); },[]);
 
@@ -763,7 +767,7 @@ export default function ToyboxApp() {
         <Stars/>
         {screen==="welcome"          && <Welcome      onNext={()=>setScreen("role_select")}/>}
         {screen==="role_select"      && <RoleSelect   onKid={()=>setScreen("kid_profiles")} onParent={()=>setScreen("parent_login")} onBack={()=>setScreen("welcome")}/>}
-        {screen==="kid_profiles"     && <KidProfiles  kids={kids} onSelect={k=>{setLoginKid(k);setScreen("kid_pin");}} onNew={()=>setScreen("kid_reg")} onBack={()=>setScreen("role_select")} onRestore={onRestore}/>}
+        {screen==="kid_profiles"     && <KidProfiles  kids={kids} onSelect={k=>{setLoginKid(k);setScreen("kid_pin");}} onNew={()=>{ if(kids.length>=1 && !famPremium){ setKidLimit(true); } else { setScreen("kid_reg"); } }} onBack={()=>setScreen("role_select")} onRestore={onRestore}/>}
         {screen==="kid_reg"          && <KidRegister  regData={regData} setRegData={setRegData} onComplete={d=>{setRegData(d);enterTwoFA("kid_reg_2fa");}} onBack={()=>setScreen("kid_profiles")} setBgTheme={setBgTheme}/>}
         {screen==="kid_reg_2fa"      && <TwoFA        email={regData.email} code={twoFACode} who={regData.name} isReg onVerified={()=>onKidReg(regData)} onBack={()=>setScreen("kid_reg")}/>}
         {screen==="kid_pin"          && <PinScreen    kid={loginKid} onVerified={()=>enterTwoFA("kid_login_2fa")} onBack={()=>setScreen("kid_profiles")}/>}
@@ -772,6 +776,18 @@ export default function ToyboxApp() {
         {screen==="celebrate"        && <Celebrate    user={authUser}/>}
         {screen==="kid_dash"         && <KidDash      user={authUser} savedState={savedState} onLogout={()=>{setAuthUser(null);setScreen("welcome");}}/>}
         {screen==="parent_dash"      && <ParentDash   kids={kids} onResetKid={onResetKid} onLogout={()=>setScreen("welcome")}/>}
+
+        {kidLimit&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:22}} onClick={()=>setKidLimit(false)}>
+            <div style={{background:"#111827",border:"1px solid rgba(124,58,237,.35)",borderRadius:22,padding:24,maxWidth:360,width:"100%",textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+              <div style={{fontSize:46,marginBottom:8}}>👨‍👩‍👧‍👦</div>
+              <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",marginBottom:8}}>Add the whole family!</div>
+              <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.7)",lineHeight:1.6,marginBottom:18}}>The free plan includes <strong style={{color:"#fff"}}>1 kid</strong>. Unlock <strong style={{color:"#c4b5fd"}}>Toybox Plus</strong> to add all your children — each with their own account, tasks and savings. ⭐</div>
+              <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.5)",lineHeight:1.6,marginBottom:18}}>Tap the <strong style={{color:"#fff"}}>☁️ button</strong> → <strong style={{color:"#fff"}}>Toybox Plus</strong> to unlock.</div>
+              <button onClick={()=>setKidLimit(false)} style={{width:"100%",padding:13,borderRadius:13,border:"none",background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer"}}>Got it</button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
@@ -1064,6 +1080,9 @@ function KidDash({user,savedState,onLogout}){
   const [ttEnabled,   setTtEnabled]   = useState(false);                         // Together Time on/off (parent-set)
   const [reqCat,      setReqCat]      = useState("together");
   const [reqText,     setReqText]     = useState("");
+  const [savings,     setSavings]     = useState(null);                          // {name,target,saved,matchPct} or null
+  const [goalName,    setGoalName]    = useState("");
+  const [goalTarget,  setGoalTarget]  = useState(100);
   const [lesson,       setLesson]      = useState(null);   // lesson modal
   const [lessonSlide,  setLessonSlide] = useState(0);
   const [lessonProgress,setLessonProg]= useState({});     // saved progress per lesson
@@ -1315,7 +1334,21 @@ function KidDash({user,savedState,onLogout}){
     setStore(await loadStore());
     const o = await loadOwed(); setOwed(o[user?.id]||0);
     const s = await loadSettings(); setTtEnabled(!!s.togetherTime);
+    const sv = await loadSavings(); setSavings(sv[user?.id]||null);
   };
+  const setSavingsGoal = () => {
+    const name=goalName.trim(); if(!name) return;
+    (async()=>{ const sv=await loadSavings(); const prev=sv[user?.id]; sv[user?.id]={name,target:Math.max(10,+goalTarget||10),saved:prev?.saved||0,matchPct:prev?.matchPct||0}; await saveSavings(sv); setSavings(sv[user?.id]); })();
+    setGoalName("");
+  };
+  const depositSavings = (n) => {
+    if(n<=0||n>coins||!savings) return;
+    const bonus = Math.floor(n*(savings.matchPct||0)/100);
+    (async()=>{ const sv=await loadSavings(); const cur=sv[user?.id]; if(!cur) return; cur.saved=(cur.saved||0)+n+bonus; sv[user?.id]=cur; await saveSavings(sv); setSavings({...cur}); })();
+    setCoins(c=>c-n); fx("reward",25);
+    setTaskCelebrate({emoji:"🏦",title:`Saved ${n} coins!`,label:bonus>0?`Your grown-up matched +${bonus} bonus coins! 🎉`:undefined,coins:bonus>0?undefined:undefined});
+  };
+  const clearSavingsGoal = () => { (async()=>{ const sv=await loadSavings(); const saved=sv[user?.id]?.saved||0; if(saved>0) setCoins(c=>c+saved); delete sv[user?.id]; await saveSavings(sv); setSavings(null); })(); };
   useEffect(()=>{ (async()=>{ await refreshTasks(); const g=await loadData(`toybox:choregoal:${user?.id}`); if(g) setChoreGoal(g); })(); },[]);
   // Re-check for parent approvals whenever the Tasks/Together views open.
   useEffect(()=>{ if(nav==="More"&&(moreView==="Tasks"||moreView==="Together")) refreshTasks(); },[nav,moreView]);
@@ -2366,18 +2399,37 @@ function KidDash({user,savedState,onLogout}){
                   </div>
                 )}
 
-                {/* Goal jar */}
-                <div style={{background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.1)",borderRadius:16,padding:15,marginBottom:14}}>
-                  <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff",marginBottom:8}}>🫙 Coin Goal Jar</div>
-                  {choreGoal>0?(<>
-                    <div style={{height:12,borderRadius:100,background:"rgba(255,255,255,.1)",overflow:"hidden",marginBottom:6}}><div style={{height:"100%",width:`${Math.min(100,Math.round(coins/choreGoal*100))}%`,background:"linear-gradient(90deg,#f59e0b,#fbbf24)",transition:"width .4s"}}/></div>
-                    <div style={{fontSize:12,fontWeight:800,color:coins>=choreGoal?"#86efac":"rgba(255,255,255,.6)"}}>{coins} / {choreGoal} coins {coins>=choreGoal?"— goal reached! 🎉":`· ${choreGoal-coins} to go!`}</div>
-                    <button onClick={()=>saveChoreGoal(0)} style={{marginTop:8,background:"none",border:"none",color:"rgba(255,255,255,.35)",fontSize:11,fontWeight:700,cursor:"pointer"}}>Change goal</button>
-                  </>):(
-                    <div style={{display:"flex",gap:7}}>
-                      {[50,100,200].map(g=>(<button key={g} onClick={()=>saveChoreGoal(g)} style={{flex:1,padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>{g} 🪙</button>))}
+                {/* Savings jar (with optional parent match) */}
+                <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.1),rgba(245,158,11,.04))",border:"1px solid rgba(245,158,11,.25)",borderRadius:16,padding:15,marginBottom:14}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff",marginBottom:8}}>🏦 Savings Jar</div>
+                  {savings?(()=>{
+                    const pct=Math.min(100,Math.round(savings.saved/savings.target*100));
+                    const done=savings.saved>=savings.target;
+                    return(<>
+                      <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:6}}>{savings.name}</div>
+                      <div style={{height:14,borderRadius:100,background:"rgba(255,255,255,.1)",overflow:"hidden",marginBottom:6}}><div style={{height:"100%",width:`${pct}%`,background:"linear-gradient(90deg,#f59e0b,#fbbf24)",transition:"width .4s"}}/></div>
+                      <div style={{fontSize:12,fontWeight:800,color:done?"#86efac":"rgba(255,255,255,.7)"}}>{savings.saved} / {savings.target} 🪙 {done?"— you did it! 🎉":`· ${savings.target-savings.saved} to go`}</div>
+                      {savings.matchPct>0&&<div style={{fontSize:11,fontWeight:800,color:"#c4b5fd",background:"rgba(124,58,237,.15)",borderRadius:8,padding:"5px 9px",marginTop:8}}>⭐ Grown-up match: every 100 you save, they add {savings.matchPct} bonus! 💜</div>}
+                      {!done&&coins>0&&(
+                        <div style={{marginTop:10}}>
+                          <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)",marginBottom:6}}>Move coins into savings:</div>
+                          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                            {[10,25,50].filter(n=>n<=coins).map(n=>(<button key={n} onClick={()=>depositSavings(n)} style={{flex:1,minWidth:64,padding:"9px",borderRadius:10,border:"1px solid rgba(245,158,11,.4)",background:"rgba(245,158,11,.14)",color:"#fde68a",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>+{n}</button>))}
+                            <button onClick={()=>depositSavings(coins)} style={{flex:1,minWidth:64,padding:"9px",borderRadius:10,border:"1px solid rgba(245,158,11,.4)",background:"rgba(245,158,11,.14)",color:"#fde68a",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>All {coins}</button>
+                          </div>
+                        </div>
+                      )}
+                      <button onClick={clearSavingsGoal} style={{marginTop:10,background:"none",border:"none",color:"rgba(255,255,255,.35)",fontSize:11,fontWeight:700,cursor:"pointer"}}>{done?"Start a new goal (keep coins)":"Cancel goal (get coins back)"}</button>
+                    </>);
+                  })():(<>
+                    <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,marginBottom:10}}>Set a goal and save up your coins for something big! 🎯</div>
+                    <input value={goalName} onChange={e=>setGoalName(e.target.value)} maxLength={40} placeholder="What are you saving for? (e.g. a bike)" style={{width:"100%",padding:"11px 12px",borderRadius:11,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:14,fontWeight:600,marginBottom:8,boxSizing:"border-box"}}/>
+                    <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.45)",marginBottom:6}}>Goal amount:</div>
+                    <div style={{display:"flex",gap:7,marginBottom:10}}>
+                      {[100,250,500].map(g=>(<button key={g} onClick={()=>setGoalTarget(g)} style={{flex:1,padding:"9px",borderRadius:10,border:`1.5px solid ${goalTarget===g?"rgba(245,158,11,.5)":"rgba(255,255,255,.14)"}`,background:goalTarget===g?"rgba(245,158,11,.14)":"transparent",color:goalTarget===g?"#fde68a":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>{g} 🪙</button>))}
                     </div>
-                  )}
+                    <button onClick={setSavingsGoal} disabled={!goalName.trim()} style={{width:"100%",padding:12,borderRadius:12,border:"none",background:goalName.trim()?"linear-gradient(135deg,#f59e0b,#f97316)":"rgba(255,255,255,.1)",color:goalName.trim()?"#fff":"rgba(255,255,255,.4)",fontFamily:"var(--fd)",fontSize:14,cursor:goalName.trim()?"pointer":"default"}}>Start saving! 🏦</button>
+                  </>)}
                 </div>
 
                 {/* Reward store */}
@@ -3487,8 +3539,9 @@ function ParentDash({kids,onResetKid,onLogout}){
   const [nMoney,setNMoney]=useState(2);                 // pocket-money amount (tracking only)
   // New reward-store item
   const [sName,setSName]=useState(""); const [sEmoji,setSEmoji]=useState("🎁"); const [sCost,setSCost]=useState(50);
-  // Pocket-money ledger + Together Time
+  // Pocket-money ledger + Together Time + savings match + premium
   const [owed,setOwed]=useState({}); const [tt,setTt]=useState(false); const [requests,setRequests]=useState([]);
+  const [savings,setSavingsMap]=useState({}); const [prem,setPrem]=useState(false);
 
   // Load each kid's saved state to show real performance
   useEffect(()=>{ (async()=>{
@@ -3496,7 +3549,8 @@ function ParentDash({kids,onResetKid,onLogout}){
     for(const k of kids){ const st=await loadData(stateKey(k.id)); if(st) out[k.id]=st; }
     setKidStates(out);
   })(); },[kids]);
-  useEffect(()=>{ (async()=>{ setTasks(await loadTasks()); setStore(await loadStore()); setClaims(await loadClaims()); setOwed(await loadOwed()); setTt(!!(await loadSettings()).togetherTime); setRequests(await loadRequests()); })(); },[]);
+  useEffect(()=>{ (async()=>{ setTasks(await loadTasks()); setStore(await loadStore()); setClaims(await loadClaims()); setOwed(await loadOwed()); setTt(!!(await loadSettings()).togetherTime); setRequests(await loadRequests()); setSavingsMap(await loadSavings()); const r=await loadData("toybox:family:premium"); setPrem(r===true||r==="1"||r===1); })(); },[]);
+  const setMatch=(kidId,pct)=>{ const sv={...savings}; if(sv[kidId]){ sv[kidId]={...sv[kidId],matchPct:pct}; setSavingsMap(sv); saveSavings(sv); } };
   useEffect(()=>{ if(!nKid && kids.length) setNKid(kids[0].id); },[kids]);
   const toggleTt=()=>{ const v=!tt; setTt(v); saveSettings({togetherTime:v}); };
   const markPaid=(kidId)=>{ const o={...owed,[kidId]:0}; setOwed(o); saveOwed(o); };
@@ -3536,8 +3590,8 @@ function ParentDash({kids,onResetKid,onLogout}){
       <div className="main">
         {kids.length>0&&(
           <div style={{display:"flex",gap:8,marginBottom:14}}>
-            {[["perf","📊 Performance"],["tasks",`✅ Tasks & Rewards${pending.length||openClaims.length?` (${pending.length+openClaims.length})`:""}`]].map(([k,l])=>(
-              <button key={k} onClick={()=>setPv(k)} style={{flex:1,padding:"9px",borderRadius:11,border:`1.5px solid ${pv===k?"rgba(16,185,129,.5)":"rgba(255,255,255,.14)"}`,background:pv===k?"rgba(16,185,129,.16)":"transparent",color:pv===k?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>{l}</button>
+            {[["perf","📊 Kids"],["tasks",`✅ Tasks${pending.length||openClaims.length?` (${pending.length+openClaims.length})`:""}`],["report","📈 Report"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setPv(k)} style={{flex:1,padding:"9px 4px",borderRadius:11,border:`1.5px solid ${pv===k?"rgba(16,185,129,.5)":"rgba(255,255,255,.14)"}`,background:pv===k?"rgba(16,185,129,.16)":"transparent",color:pv===k?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>{l}</button>
             ))}
           </div>
         )}
@@ -3813,6 +3867,81 @@ function ParentDash({kids,onResetKid,onLogout}){
                   ))}
               </>)}
             </div>
+
+            {/* Savings Match — PLUS feature */}
+            <div style={{background:"linear-gradient(135deg,rgba(124,58,237,.12),rgba(245,158,11,.06))",border:"1px solid rgba(124,58,237,.3)",borderRadius:16,padding:15,marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>🏦 Savings Match</div>
+                <span style={{fontSize:10,fontWeight:800,background:"rgba(124,58,237,.3)",color:"#c4b5fd",padding:"2px 8px",borderRadius:100}}>⭐ PLUS</span>
+              </div>
+              <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,marginBottom:12}}>Reward saving! For every 100 coins your child puts in their Savings Jar, you add a bonus — teaching them how a savings “match” grows money (just like grown-up retirement accounts). 💜</div>
+              {!prem?(
+                <div style={{background:"rgba(124,58,237,.1)",border:"1px solid rgba(124,58,237,.25)",borderRadius:12,padding:13,textAlign:"center"}}>
+                  <div style={{fontSize:12,fontWeight:800,color:"#c4b5fd",lineHeight:1.5}}>Unlock <strong style={{color:"#fff"}}>Toybox Plus</strong> to add a savings match. Tap the ☁️ button → Toybox Plus.</div>
+                </div>
+              ):kids.length===0?(
+                <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.5)"}}>Kids need accounts first.</div>
+              ):kids.map(k=>{
+                const g=savings[k.id];
+                return(
+                  <div key={k.id} style={{background:"rgba(255,255,255,.05)",borderRadius:12,padding:12,marginBottom:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:g?8:0}}>
+                      <span style={{fontSize:20}}>{k.avatar}</span>
+                      <div style={{flex:1}}><div style={{fontSize:13,fontWeight:800,color:"#fff"}}>{k.name}</div><div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)"}}>{g?`Saving for "${g.name}" · ${g.saved}/${g.target} 🪙`:"No savings goal yet"}</div></div>
+                    </div>
+                    {g&&(
+                      <div style={{display:"flex",gap:6}}>
+                        {[0,25,50,100].map(pct=>(<button key={pct} onClick={()=>setMatch(k.id,pct)} style={{flex:1,padding:"8px",borderRadius:9,border:`1.5px solid ${(g.matchPct||0)===pct?"rgba(124,58,237,.5)":"rgba(255,255,255,.14)"}`,background:(g.matchPct||0)===pct?"rgba(124,58,237,.18)":"transparent",color:(g.matchPct||0)===pct?"#fff":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>{pct===0?"Off":`+${pct}%`}</button>))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>)}
+        </>)}
+
+        {pv==="report"&&(<>
+          {!prem?(
+            <div style={{textAlign:"center",padding:"36px 18px"}}>
+              <div style={{fontSize:48,marginBottom:12}}>📈</div>
+              <div style={{fontFamily:"var(--fd)",fontSize:19,color:"#fff",marginBottom:8}}>Family Money Report</div>
+              <div style={{fontSize:13,color:"rgba(255,255,255,.6)",fontWeight:600,lineHeight:1.6,marginBottom:16}}>A weekly at-a-glance digest of every kid — money grown, chores done, coins saved, lessons and streaks, plus a talking point to chat about together.</div>
+              <div style={{background:"rgba(124,58,237,.12)",border:"1px solid rgba(124,58,237,.3)",borderRadius:14,padding:14,display:"inline-block"}}>
+                <div style={{fontSize:12,fontWeight:800,color:"#c4b5fd",lineHeight:1.5}}>⭐ A <strong style={{color:"#fff"}}>Toybox Plus</strong> feature — unlock via the ☁️ button → Toybox Plus.</div>
+              </div>
+            </div>
+          ):kids.length===0?(
+            <div style={{textAlign:"center",padding:"40px 20px",fontSize:13,color:"rgba(255,255,255,.55)",fontWeight:600}}>Kids need accounts before there's a report to show.</div>
+          ):(<>
+            <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff",marginBottom:4}}>📈 Family Report</div>
+            <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.5)",marginBottom:14}}>How the whole family is doing right now.</div>
+            {kids.map(k=>{
+              const st=kidStates[k.id];
+              const total=kidTotal(k), gain=total-1000;
+              const doneTasks=tasks.filter(t=>t.kidId===k.id&&(t.status==="done"||t.status==="approved")).length;
+              const sv=savings[k.id];
+              const pm=owed[k.id]||0;
+              const lessons=st?.doneLesson?.length||0;
+              const streak=st?.streak||0;
+              return(
+                <div key={k.id} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:15,marginBottom:12}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                    <span style={{fontSize:30}}>{k.avatar}</span>
+                    <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{k.name}</div><div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.45)"}}>🔥 {streak}-day streak</div></div>
+                    <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:gain>=0?"#86efac":"#fca5a5"}}>{gain>=0?"+":""}{f$(gain)}</div><div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)"}}>MONEY GARDEN</div></div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+                    {[["✅ Tasks done",`${doneTasks}`],["📚 Lessons",`${lessons}`],["🏦 Saved",sv?`${sv.saved} 🪙`:"—"],["💵 Pocket money",pm>0?f$(pm):"—"]].map(([lbl,val])=>(
+                      <div key={lbl} style={{background:"rgba(255,255,255,.05)",borderRadius:10,padding:"9px 11px"}}><div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.4)"}}>{lbl}</div><div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff"}}>{val}</div></div>
+                    ))}
+                  </div>
+                  <div style={{background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.25)",borderRadius:11,padding:11,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.5}}>
+                    💬 {doneTasks===0?`Ask ${k.name} which chore they'd like to try first this week.`:sv&&sv.saved>0?`${k.name} is saving for "${sv.name}"! Ask them why they picked it and how it feels to watch it grow.`:gain>=0?`${k.name} is up ${f$(Math.abs(gain))} — ask what their best decision was.`:`${k.name} is down a bit — a great chance to talk about staying calm and playing the long game.`}
+                  </div>
+                </div>
+              );
+            })}
           </>)}
         </>)}
 
