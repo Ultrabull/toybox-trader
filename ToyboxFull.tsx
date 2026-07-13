@@ -450,7 +450,7 @@ const CSS = `
 :root{--fd:'Fredoka One',cursive;--fb:'Nunito',sans-serif;--r:14px;--rl:22px}
 body{font-family:var(--fb);overflow:hidden}
 body[data-flow="auth-mid"] #tbx-sync-btn,body[data-flow="auth-mid"] #tbx-push-btn{display:none!important}
-.app{height:100vh;width:100vw;overflow:hidden;position:relative}
+.app{height:100vh;height:100dvh;width:100vw;overflow:hidden;position:relative}
 
 /* Stars */
 .stars{position:fixed;inset:0;overflow:hidden;z-0;pointer-events:none}
@@ -458,7 +458,7 @@ body[data-flow="auth-mid"] #tbx-sync-btn,body[data-flow="auth-mid"] #tbx-push-bt
 @keyframes twinkle{0%,100%{opacity:.1}50%{opacity:.65}}
 
 /* ── Auth screens ── */
-.page{height:100vh;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow-y:auto;position:relative;z-index:1}
+.page{height:100vh;height:100dvh;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative;z-index:1}
 .card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:var(--rl);padding:28px 22px;width:100%;max-width:400px;backdrop-filter:blur(20px)}
 .dots{display:flex;gap:7px;justify-content:center;margin-bottom:20px}
 .dot{height:6px;border-radius:100px;background:rgba(255,255,255,.2);transition:all .3s}
@@ -530,7 +530,7 @@ body[data-flow="auth-mid"] #tbx-sync-btn,body[data-flow="auth-mid"] #tbx-push-bt
 @keyframes confFall{0%{transform:translateY(-20px) rotate(0);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
 
 /* ── Dashboard shell ── */
-.dash{height:100vh;display:flex;flex-direction:column;overflow:hidden;position:relative;z-index:1}
+.dash{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;position:relative;z-index:1}
 .topbar{display:flex;align-items:center;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.3);backdrop-filter:blur(16px);flex-shrink:0;gap:10px;z-index:20;position:relative}
 .tb-av{width:36px;height:36px;border-radius:11px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
 .tb-name{font-family:var(--fd);font-size:15px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -538,7 +538,7 @@ body[data-flow="auth-mid"] #tbx-sync-btn,body[data-flow="auth-mid"] #tbx-push-bt
 .tb-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .tb-chip{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:100px;padding:5px 11px;font-size:12px;font-weight:800;color:#fff;white-space:nowrap}
 .tb-chip.gold{color:#f59e0b}.tb-chip.fire{color:#fb923c}
-.main{flex:1;overflow-y:auto;padding:14px 14px 80px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.1) transparent}
+.main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px calc(84px + env(safe-area-inset-bottom,0px));scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.1) transparent}
 .bnav{display:flex;position:fixed;bottom:0;left:0;right:0;height:64px;background:rgba(0,0,0,.7);border-top:1px solid rgba(255,255,255,.1);backdrop-filter:blur(20px);z-index:50;padding-bottom:env(safe-area-inset-bottom,0px)}
 .bnav-btn{flex:1;border:none;background:transparent;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:rgba(255,255,255,.35);font-family:var(--fb);font-size:9px;font-weight:800;position:relative}
 .bnav-btn .bni{font-size:22px;transition:transform .2s}
