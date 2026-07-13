@@ -1182,6 +1182,7 @@ function KidDash({user,savedState,onLogout}){
   const [reportOpen,  setReportOpen]  = useState(false);                         // 8 — report card
   const [bugCat,      setBugCat]      = useState("");                            // help/report-a-problem
   const [bugMsg,      setBugMsg]      = useState("");
+  const [bugEmail,    setBugEmail]    = useState("");                            // optional grown-up email for a reply/confirmation
   const [bugState,    setBugState]    = useState("idle");                        // idle | sending | done | error
   const [owned,       setOwned]       = useState(S.owned || []);                 // shop items owned
   const [equipAvatar, setEquipAvatar] = useState(S.equipAvatar || null);         // equipped avatar emoji (overrides default)
@@ -1837,6 +1838,7 @@ function KidDash({user,savedState,onLogout}){
         message: bugMsg,
         name: user.name,
         age: user.age,
+        contactEmail: bugEmail.trim(),
         screen: nav,
         appVersion: (typeof location!=="undefined"?location.host:""),
         userAgent: (typeof navigator!=="undefined"?navigator.userAgent:""),
@@ -3062,8 +3064,8 @@ function KidDash({user,savedState,onLogout}){
                   <div style={{background:"rgba(16,185,129,.12)",border:"1px solid rgba(16,185,129,.35)",borderRadius:16,padding:22,textAlign:"center"}}>
                     <div style={{fontSize:44,marginBottom:8}}>🎉</div>
                     <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#86efac",marginBottom:6}}>Thank you!</div>
-                    <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.6,marginBottom:16}}>We got your message and we'll try to fix it fast. You're helping make Toybox better for everyone! 🌟</div>
-                    <button onClick={()=>{setBugState("idle");setBugCat("");setBugMsg("");}} style={{padding:"11px 22px",borderRadius:13,border:"none",background:"rgba(255,255,255,.14)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>Send another</button>
+                    <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.6,marginBottom:16}}>We got your message and we'll try to fix it fast.{bugEmail.trim()?" We sent a copy to your email too 📧.":""} You're helping make Toybox better for everyone! 🌟</div>
+                    <button onClick={()=>{setBugState("idle");setBugCat("");setBugMsg("");setBugEmail("");}} style={{padding:"11px 22px",borderRadius:13,border:"none",background:"rgba(255,255,255,.14)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>Send another</button>
                   </div>
                 ):(
                   <>
@@ -3077,6 +3079,10 @@ function KidDash({user,savedState,onLogout}){
                     </div>
                     <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:8}}>2. Tell us more <span style={{fontWeight:700,color:"rgba(255,255,255,.4)"}}>(you can skip this)</span></div>
                     <textarea value={bugMsg} onChange={e=>setBugMsg(e.target.value)} maxLength={500} placeholder="Like: 'The price of Apple looks stuck' or 'I can't buy Roblox'..." style={{width:"100%",minHeight:90,padding:"12px 13px",borderRadius:13,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:13,fontWeight:600,lineHeight:1.5,resize:"none",outline:"none",boxSizing:"border-box"}}/>
+
+                    <div style={{fontSize:13,fontWeight:800,color:"#fff",margin:"16px 0 8px"}}>3. A grown-up's email <span style={{fontWeight:700,color:"rgba(255,255,255,.4)"}}>(optional — so we can reply)</span></div>
+                    <input value={bugEmail} onChange={e=>setBugEmail(e.target.value)} type="email" inputMode="email" autoComplete="email" placeholder="grown-up@email.com" style={{width:"100%",padding:"12px 13px",borderRadius:13,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:14,fontWeight:600,outline:"none",boxSizing:"border-box"}}/>
+                    <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.35)",marginTop:6,lineHeight:1.5}}>💚 Add an email and we'll send a note back when it's fixed. Ask a grown-up first!</div>
 
                     <button disabled={!bugCat||bugState==="sending"} onClick={sendBug} style={{width:"100%",marginTop:14,padding:15,borderRadius:15,border:"none",background:(!bugCat||bugState==="sending")?"rgba(255,255,255,.1)":"linear-gradient(135deg,#10b981,#059669)",color:(!bugCat||bugState==="sending")?"rgba(255,255,255,.4)":"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:(!bugCat||bugState==="sending")?"default":"pointer",boxShadow:(!bugCat||bugState==="sending")?"none":"0 6px 20px rgba(16,185,129,.4)"}}>
                       {bugState==="sending"?"Sending... 📨":!bugCat?"Pick what's wrong first ☝️":"📨 Send to the Toybox team"}
