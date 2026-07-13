@@ -733,7 +733,7 @@ function Welcome({onNext}){
         <div className="ttl" style={{fontSize:30}}>Toybox Trader</div>
         <div className="sub">Learn to invest, grow your Money Garden, and beat your friends every month!</div>
         <div style={{display:"flex",gap:7,justifyContent:"center",flexWrap:"wrap",marginBottom:20}}>
-          {["📈 Real skills","🎮 Game fun","🏆 Monthly winners","🔐 Super secure"].map(t=><div key={t} style={{fontSize:11,fontWeight:800,background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",padding:"4px 10px",borderRadius:100}}>{t}</div>)}
+          {["📈 Real skills","🎮 Game fun","🏆 Monthly winners","🧸 Kid-safe"].map(t=><div key={t} style={{fontSize:11,fontWeight:800,background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",padding:"4px 10px",borderRadius:100}}>{t}</div>)}
         </div>
         <button className="btn btn-w" onClick={onNext}>Get Started 🚀</button>
         <div style={{marginTop:14,fontSize:11,fontWeight:600,color:"rgba(255,255,255,.4)"}}>
@@ -829,7 +829,7 @@ function KidRegister({regData,setRegData,onComplete,onBack,setBgTheme}){
         {step===0&&<><div className="ttl">What's your name? 😊</div><div className="sub">This shows on the leaderboard</div><input className="inp" placeholder="e.g. Jamie, Zoe, Max..." value={d.name} onChange={e=>upd("name",e.target.value)} maxLength={20} autoFocus/>{d.name&&<div style={{fontSize:12,color:"rgba(255,255,255,.5)",fontWeight:700}}>Looking good, {d.name}! 👋</div>}</>}
         {step===1&&<><div className="ttl">Pick your avatar! {d.avatar}</div><div className="sub" style={{marginBottom:12}}>Your trading identity</div><div className="av-grid">{AVATARS.map(a=><button key={a} className={`av-opt ${d.avatar===a?"sel":""}`} onClick={()=>upd("avatar",a)}>{a}</button>)}</div></>}
         {step===2&&<><div className="ttl">How old are you? 🎂</div><div className="sub" style={{marginBottom:12}}>Personalises your learning</div><div className="age-grid">{[8,9,10,11,12,13,14,15,16,17].map(a=><button key={a} className={`age-btn ${d.age===a?"sel":""}`} onClick={()=>upd("age",a)}>{a}</button>)}</div></>}
-        {step===3&&<><div className="ttl">Your email address 📧</div><div className="sub" style={{marginBottom:10}}>We send a security code here every login</div><div className="sec-badge"><span style={{fontSize:18}}>🔐</span><span>This is <strong>Two-Factor Authentication (2FA)</strong>. Even if someone steals your PIN, they still can't log in without this code. Google, Apple and your bank all use it!</span></div><input className="inp" type="email" placeholder="your@email.com" value={d.email} onChange={e=>upd("email",e.target.value)}/></>}
+        {step===3&&<><div className="ttl">Your email address 📧</div><div className="sub" style={{marginBottom:10}}>Used for the pretend 2FA security lesson — we don't send real emails.</div><div className="sec-badge"><span style={{fontSize:18}}>🔐</span><span>You'll <strong>practice Two-Factor Authentication (2FA)</strong>. Even if someone steals your PIN, they still can't log in without the code. Real apps like Google, Apple and banks all use it!</span></div><input className="inp" type="email" placeholder="your@email.com" value={d.email} onChange={e=>upd("email",e.target.value)}/></>}
         {step===4&&<><div className="ttl">Create your PIN 🔒</div><div className="sub">4 digits only you know — don't use your birthday!</div><div className="lbl">Your PIN</div><input className="inp" type="password" inputMode="numeric" maxLength={4} placeholder="4 digits" value={d.pin} onChange={e=>upd("pin",e.target.value.replace(/\D/g,"").slice(0,4))}/><div className="lbl">Confirm PIN</div><input className="inp" type="password" inputMode="numeric" maxLength={4} placeholder="Type it again" value={d.pin2} onChange={e=>upd("pin2",e.target.value.replace(/\D/g,"").slice(0,4))}/>{d.pin.length===4&&d.pin===d.pin2&&<div style={{fontSize:12,fontWeight:800,color:"#86efac"}}>✅ PINs match!</div>}</>}
         {step===5&&<><div className="ttl">Pick your theme! 🎨</div><div className="sub" style={{marginBottom:12}}>How your dashboard looks</div><div className="theme-grid">{THEMES.map(t=><button key={t.id} className={`theme-opt ${d.theme===t.id?"sel":""}`} style={{background:t.bg}} onClick={()=>{upd("theme",t.id);setBgTheme(t);}}><div className="theme-dot" style={{background:t.accent}}/><div className="theme-lbl">{t.label}</div></button>)}</div></>}
         {err&&<div className="pin-err">{err}</div>}
@@ -865,29 +865,30 @@ function TwoFA({email,code,who,isReg,onVerified,onBack}){
   const [err,setErr]=useState("");
   const [timer,setTimer]=useState(60);
   useEffect(()=>{const id=setInterval(()=>setTimer(t=>t>0?t-1:0),1000);return()=>clearInterval(id);},[]);
-  const handle=(i,v)=>{if(!/^\d?$/.test(v))return;const n=[...vals];n[i]=v;setVals(n);if(v&&i<5)r[i+1].current?.focus();const joined=n.join("");if(joined.length===6){if(joined===code){setErr("");onVerified();}else setErr("Wrong code — check the email below!");}else setErr("");};
+  const handle=(i,v)=>{if(!/^\d?$/.test(v))return;const n=[...vals];n[i]=v;setVals(n);if(v&&i<5)r[i+1].current?.focus();const joined=n.join("");if(joined.length===6){if(joined===code){setErr("");onVerified();}else{setErr("Oops — not quite! Tap the code below to fill it in 👇");setTimeout(()=>{setVals(["","","","","",""]);r[0].current?.focus();},650);}}else setErr("");};
   const keyDown=(i,e)=>{if(e.key==="Backspace"&&!vals[i]&&i>0)r[i-1].current?.focus();};
+  const fillCode=()=>{setErr("");setVals(String(code).split(""));setTimeout(onVerified,350);};
   return(
     <div className="page" style={{overflowY:"auto"}}>
       <div className="card">
         <div style={{textAlign:"center",marginBottom:16}}>
-          <div style={{fontSize:42,marginBottom:8}}>📧</div>
-          <div className="ttl">{isReg?"Almost done!":"Check your email!"}</div>
-          <div className="sub">We sent a 6-digit code to<br/><strong style={{color:"#fff"}}>{email}</strong></div>
+          <div style={{fontSize:42,marginBottom:8}}>🔐</div>
+          <div className="ttl">Security Lesson!</div>
+          <div className="sub">Practice how <strong style={{color:"#fff"}}>2-Factor Login</strong> keeps you safe — no real email is sent, this is just for learning! 🎓</div>
         </div>
         <div style={{background:"rgba(16,185,129,.1)",border:"1px solid rgba(16,185,129,.25)",borderRadius:13,padding:13,marginBottom:14,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.85)",lineHeight:1.6}}>
-          🔐 <strong>Why 2FA?</strong> Even if someone steals your PIN, they can't log in without this code. It's like having two locks on a door. Google, Apple and banks all use this!
+          🔐 <strong>Why 2FA?</strong> Even if someone steals your PIN, they can't log in without this code. It's like having two locks on a door. Real apps like Google, Apple and banks all use this — you're learning how the pros stay safe!
         </div>
         <div style={{fontFamily:"var(--fd)",fontSize:11,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>Enter your 6-digit code</div>
         <div className="twofa-row">{vals.map((v,i)=><input key={i} ref={r[i]} className={`twofa-inp ${v?"filled":""}`} value={v} maxLength={1} inputMode="numeric" onChange={e=>handle(i,e.target.value)} onKeyDown={e=>keyDown(i,e)}/>)}</div>
         {err&&<div style={{textAlign:"center",fontSize:12,fontWeight:800,color:"#fca5a5",marginBottom:8}}>❌ {err}</div>}
-        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8}}>👇 Your simulated email (in real life this arrives in your inbox!)</div>
-        <div className="email-pop">
-          <div className="email-hd"><div className="email-logo">🧸</div><div><div style={{fontSize:11,fontWeight:800,color:"#fff"}}>Toybox Trader</div><div style={{fontSize:10,color:"rgba(255,255,255,.6)",fontWeight:600}}>noreply@toyboxtrader.com → {email}</div></div></div>
+        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8}}>👇 Pretend email — in a real app this would land in your inbox. Tap it to fill the code!</div>
+        <div className="email-pop" onClick={fillCode} style={{cursor:"pointer"}}>
+          <div className="email-hd"><div className="email-logo">🧸</div><div><div style={{fontSize:11,fontWeight:800,color:"#fff"}}>Toybox Trader (pretend)</div><div style={{fontSize:10,color:"rgba(255,255,255,.6)",fontWeight:600}}>demo@toyboxtrader.com → {email}</div></div></div>
           <div className="email-bd">
-            <div className="email-sub">🔐 Your Toybox Trader security code</div>
-            <div className="email-txt">Hi {who}! 👋 {isReg?"Almost done creating your account. Enter this code to verify your email:":"Here's your login security code:"}</div>
-            <div className="email-code-box"><div className="email-code">{code}</div><div style={{fontSize:10,fontWeight:700,color:"#9ca3af",marginTop:4}}>Expires in {timer}s · Don't share this with anyone</div></div>
+            <div className="email-sub">🔐 Your practice security code</div>
+            <div className="email-txt">Hi {who}! 👋 Tap this box to fill in your practice code:</div>
+            <div className="email-code-box"><div className="email-code">{code}</div><div style={{fontSize:10,fontWeight:700,color:"#7c3aed",marginTop:4}}>👆 Tap to fill it in automatically</div></div>
             <div className="email-foot">This is why 2FA matters — even if someone has your password, they don't have your email! 🔒</div>
           </div>
         </div>
