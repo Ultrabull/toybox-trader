@@ -57,13 +57,22 @@ To turn them on, add these **GitHub repository secrets**
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | push reminders |
 | `RESEND_API_KEY` / `EMAIL_FROM` | weekly/monthly report **emails** |
 
-### Getting a Resend key (for email updates)
+### Getting a Resend key (for bug reports today; parent email later)
 1. Sign up at **resend.com** (free tier: ~3,000 emails/mo).
 2. **API Keys → Create** → copy the key → that's `RESEND_API_KEY`.
 3. For testing you can send from `onboarding@resend.dev` **to your own account
-   email**. To email *any* parent reliably you must **verify a sending domain**
-   in Resend (needs a custom domain) and set `EMAIL_FROM` to e.g.
-   `Toybox Trader <updates@yourdomain.com>`.
+   email**.
+
+**What email is used for right now:** only the in-app **🐞 Get Help** bug
+reports, which go to a *single* support inbox (`SUPPORT_EMAIL`). Because that's
+your own address, it works on the free tier **with no domain**.
+
+**Parent weekly/monthly summaries go over Telegram, not email.** Emailing *many
+different* parents requires a **verified sending domain** in Resend (you must
+own a domain) — without it Resend only delivers to your own address. The
+summary-email code stays dormant in `scripts/report-lib.mjs`; once you verify a
+domain and set `EMAIL_FROM` to e.g. `Toybox Trader <updates@yourdomain.com>`,
+re-add the "Email updates" field and it turns back on.
 
 Without the secrets, the jobs run but safely do nothing. You can test them any
 time from **Actions → (workflow) → Run workflow**.

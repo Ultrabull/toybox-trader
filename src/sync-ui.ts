@@ -104,17 +104,6 @@ export function mountSyncUI() {
         <div id="tbx-tg-msg"></div>
 
         <hr class="sep" />
-        <div class="lbl2">📧 Email updates</div>
-        <p class="muted">Get a weekly &amp; monthly summary of your kids' trades, portfolio and progress by email.</p>
-        <div id="tbx-em-state">Checking…</div>
-        <input id="tbx-em-addr" type="email" inputmode="email" placeholder="parent@example.com" autocomplete="email" spellcheck="false" />
-        <div class="rowb">
-          <button class="act" id="tbx-em-save" type="button">Save</button>
-          <button class="ghost" id="tbx-em-test" type="button">Send test</button>
-        </div>
-        <div id="tbx-em-msg"></div>
-
-        <hr class="sep" />
         <div class="lbl2">⭐ Toybox Plus</div>
         <div id="tbx-plus-body"></div>
 
@@ -225,55 +214,12 @@ export function mountSyncUI() {
         setMsg("Disconnected.", "rgba(255,255,255,.6)");
       };
 
-      // ── Email updates ──
-      const emAddr = panel.querySelector<HTMLInputElement>("#tbx-em-addr")!;
-      const emState = panel.querySelector<HTMLElement>("#tbx-em-state")!;
-      const emMsg = panel.querySelector<HTMLElement>("#tbx-em-msg")!;
-      const emSet = (t: string, c: string) => {
-        emMsg.style.color = c;
-        emMsg.textContent = t;
-      };
-      window.storage?.get("toybox:email:notify").then((r) => {
-        const em = (r?.value || "").trim();
-        if (em) {
-          emState.style.color = "#6ee7b7";
-          emState.textContent = "✅ Sending to " + em;
-          emAddr.value = em;
-        } else {
-          emState.style.color = "rgba(255,255,255,.6)";
-          emState.textContent = "Not set up yet.";
-        }
-      });
-      panel.querySelector<HTMLButtonElement>("#tbx-em-save")!.onclick = async () => {
-        const em = emAddr.value.trim();
-        if (!/.+@.+\..+/.test(em)) {
-          emSet("That doesn't look like an email address.", "#fca5a5");
-          return;
-        }
-        await window.storage?.set("toybox:email:notify", em);
-        emState.style.color = "#6ee7b7";
-        emState.textContent = "✅ Sending to " + em;
-        emSet("Saved. You'll get weekly & monthly summaries.", "#6ee7b7");
-      };
-      panel.querySelector<HTMLButtonElement>("#tbx-em-test")!.onclick = async () => {
-        const em = emAddr.value.trim();
-        if (em) await window.storage?.set("toybox:email:notify", em);
-        emSet("Sending test email…", "rgba(255,255,255,.75)");
-        await new Promise((r) => setTimeout(r, 900)); // let the save reach the cloud
-        try {
-          const res = await fetch(apiUrl("/api/email-test"), {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ space: (localStorage.getItem("toybox:sync:space") || "") }),
-          });
-          const d = await res.json().catch(() => ({}));
-          if (d?.ok) emSet("Sent! Check your inbox (and spam). ✅", "#6ee7b7");
-          else if (d?.error === "email-not-configured") emSet("Email isn't set up on the server yet (needs RESEND_API_KEY).", "#fca5a5");
-          else emSet("Couldn't send: " + (d?.error || "unknown") + ".", "#fca5a5");
-        } catch {
-          emSet("Couldn't reach the server.", "#fca5a5");
-        }
-      };
+      // Note: parent email summaries are intentionally NOT offered here.
+      // Sending a summary to many different parent inboxes needs a verified
+      // sending domain (Resend rule), so parents use Telegram (above) instead.
+      // The summary-email code path stays dormant in scripts/report-lib.mjs —
+      // flip it back on once a domain is verified. Bug-report email (a single
+      // support inbox) works without a domain and stays enabled.
 
       // ── Toybox Plus (parent unlock) ──
       // The signed-in panel is already parent-only (needs the family password),
