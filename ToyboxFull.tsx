@@ -3111,7 +3111,7 @@ function KidDash({user,savedState,onLogout}){
                 return(
                   <div style={{position:"relative",overflow:"hidden"}} className={shake?"shake":""}>
                     {/* red flash on wrong */}
-                    {qWrong&&<div style={{position:"absolute",inset:0,background:"#ef4444",animation:"redFlash .5s ease",pointerEvents:"none",zIndex:5,borderRadius:14}}/>}
+                    {qWrong&&<div style={{position:"absolute",inset:0,background:"#ef4444",opacity:0,animation:"redFlash .5s ease forwards",pointerEvents:"none",zIndex:5,borderRadius:14}}/>}
                     <div className="lesson-body" style={{paddingTop:16}}>
                       {/* HUD: hearts + combo + checkpoint */}
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
