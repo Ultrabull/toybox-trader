@@ -302,17 +302,17 @@ const LESSONS = [
 // ─── Daily stories ─────────────────────────────────
 const DAILY_STORIES = [
   {icon:"🍎",title:"Why might a stock like Apple go UP?",color:"#6366f1",
-   body:"Imagine Apple announces a brand-new iPhone that everyone wants. When a company launches a hit product, investors rush to buy the stock — pushing the price UP! A piece of news that moves a price like this is called a 'catalyst'.",
-   lesson:"💡 Good news = more buyers = higher price. Always check WHY a stock is moving!"},
+   body:"Imagine Apple makes a cool new iPhone that everyone wants. Lots of people want to own a piece of Apple, so they buy the stock — and the price goes UP! Big exciting news that moves a price like this has a name: a 'catalyst'.",
+   lesson:"💡 Good news = more buyers = higher price. Always ask WHY a stock is moving!"},
   {icon:"🎮",title:"Why might a game company like Roblox jump?",color:"#ec4899",
-   body:"Imagine Roblox reports way more players than people expected. More players = more Robux purchases = more money for the company. When a company beats expectations, investors get excited and buy shares — pushing the price up fast.",
-   lesson:"💡 Earnings reports that BEAT expectations usually cause big price jumps. Watch out for these!"},
+   body:"Imagine WAY more kids start playing Roblox than anyone expected. More players buy more Robux, so the company makes more money. That good surprise makes people want the stock — so the price jumps up fast!",
+   lesson:"💡 When a company does BETTER than expected, the price often jumps. Fun surprise!"},
   {icon:"📉",title:"Why might the WHOLE market drop at once?",color:"#ef4444",
-   body:"Say the government raises interest rates. Higher rates mean it costs more to borrow money. Companies pay more on loans, their profits shrink, and investors sell stocks to put money in safe savings instead.",
-   lesson:"💡 Interest rate changes affect ALL stocks at once. It's called a 'macro event' — the economy affecting everything!"},
+   body:"Sometimes borrowing money gets more expensive for everyone. Companies then keep less money, so lots of people sell their stocks at the same time — and almost EVERY price drops together.",
+   lesson:"💡 Some big changes push ALL stocks down at once. That's called a 'macro event' — it touches everything!"},
   {icon:"₿",title:"Why might Bitcoin crash overnight?",color:"#f59e0b",
-   body:"Imagine a big crypto exchange has technical problems and pauses withdrawals. Scared investors sell Bitcoin as fast as they can in case they can't get their money. Mass fear = mass selling = price crash.",
-   lesson:"💡 Crypto can crash fast because it's driven by CONFIDENCE, not real products. When confidence cracks — watch out!"},
+   body:"Imagine a big crypto app breaks and people can't get their money out. Everyone gets scared and sells their Bitcoin super fast. Lots of scared selling = the price crashes down quickly.",
+   lesson:"💡 Crypto can drop FAST because it runs on feelings, not real toys or products. Be careful!"},
   {icon:"🦈",title:"What is a short squeeze?",color:"#8b5cf6",
    body:"Some traders BET that a stock will go DOWN by 'short selling' it. But if the stock goes UP instead, they panic-buy to stop their losses. All that panic buying makes the stock go up EVEN MORE. It's a squeeze!",
    lesson:"💡 GameStop went from $4 to $483 in 2021 because of a short squeeze. Regular investors made fortunes overnight!"},
@@ -1880,9 +1880,9 @@ function KidDash({user,savedState,onLogout}){
                 </div>
                 <button onClick={()=>setStoryIdx(i=>(i+1)%DAILY_STORIES.length)} style={{marginLeft:"auto",background:"rgba(255,255,255,.1)",border:"none",borderRadius:8,padding:"5px 9px",color:"rgba(255,255,255,.6)",cursor:"pointer",fontSize:11,fontWeight:800,flexShrink:0}}>Next →</button>
               </div>
-              <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.7)",lineHeight:1.65,marginBottom:8}}>{DAILY_STORIES[storyIdx].body}</div>
-              <div style={{fontSize:11,fontWeight:800,color:DAILY_STORIES[storyIdx].color,background:`${DAILY_STORIES[storyIdx].color}22`,borderRadius:8,padding:"6px 10px"}}>{DAILY_STORIES[storyIdx].lesson}</div>
-              <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,.35)",marginTop:7,textAlign:"center"}}>✨ Make-believe example to teach an idea — not real news</div>
+              <div style={{fontSize:13,fontWeight:800,color:"rgba(255,255,255,.9)",lineHeight:1.65,marginBottom:8}}>{DAILY_STORIES[storyIdx].body}</div>
+              <div style={{fontSize:12,fontWeight:800,color:DAILY_STORIES[storyIdx].color,background:`${DAILY_STORIES[storyIdx].color}22`,borderRadius:8,padding:"7px 11px"}}>{DAILY_STORIES[storyIdx].lesson}</div>
+              <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.55)",marginTop:8,textAlign:"center"}}>✨ This is a pretend story to help you learn — not real news!</div>
             </div>
 
             {/* Missions */}
@@ -2600,7 +2600,7 @@ function KidDash({user,savedState,onLogout}){
               <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff"}}>{tradeAsset.name}</div><div style={{fontSize:12,color:"rgba(255,255,255,.5)",fontWeight:700}}>{fs$(prices[tradeAsset.ticker]||tradeAsset.basePrice)} · {tradeAsset.risk==="low"?"🟢 Lower Risk":tradeAsset.risk==="medium"?"🟠 Medium Risk":"🔴 High Risk"}</div></div>
             </div>
             <div style={{background:"rgba(124,58,237,.12)",border:"1px solid rgba(124,58,237,.2)",borderRadius:12,padding:12,marginBottom:11,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.85)",lineHeight:1.55}}>🧒 {tradeAsset.kidEx}</div>
-            <div style={{borderRadius:12,padding:"10px 13px",marginBottom:12,fontSize:12,fontWeight:700,lineHeight:1.5,background:tradeAsset.newsGood?"rgba(4,120,87,.08)":"rgba(239,68,68,.07)",border:`1px solid ${tradeAsset.newsGood?"rgba(4,120,87,.25)":"rgba(239,68,68,.25)"}`,color:tradeAsset.newsGood?"#86efac":"#fca5a5"}}>{tradeAsset.news}</div>
+            <div style={{borderRadius:12,padding:"11px 13px",marginBottom:12,fontSize:13,fontWeight:800,lineHeight:1.5,background:tradeAsset.newsGood?"rgba(4,120,87,.08)":"rgba(239,68,68,.07)",border:`1px solid ${tradeAsset.newsGood?"rgba(4,120,87,.25)":"rgba(239,68,68,.25)"}`,color:tradeAsset.newsGood?"#86efac":"#fca5a5"}}>{tradeAsset.news}</div>
             <div style={{display:"flex",gap:8,marginBottom:12}}>
               <button onClick={()=>setTradeMode("buy")} style={{flex:1,padding:"10px",borderRadius:11,border:`1.5px solid ${tradeMode==="buy"?"rgba(16,185,129,.6)":"rgba(255,255,255,.15)"}`,background:tradeMode==="buy"?"rgba(16,185,129,.2)":"transparent",color:tradeMode==="buy"?"#86efac":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>🟢 Buy</button>
               <button onClick={()=>setTradeMode("sell")} style={{flex:1,padding:"10px",borderRadius:11,border:`1.5px solid ${tradeMode==="sell"?"rgba(239,68,68,.6)":"rgba(255,255,255,.15)"}`,background:tradeMode==="sell"?"rgba(239,68,68,.2)":"transparent",color:tradeMode==="sell"?"#fca5a5":"rgba(255,255,255,.5)",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>🔴 Sell {(()=>{const h=portfolio.find(p=>p.ticker===tradeAsset.ticker);return h?`(${tradeAsset.type==="crypto"?h.qty.toFixed(2):h.qty})`:""})()}</button>
