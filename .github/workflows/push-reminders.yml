@@ -1,6 +1,7 @@
 name: Push reminders
 
-# Runs hourly; each device gets its reminder at its own local 4pm.
+# Runs hourly. Each device gets: the daily bonus reminder at its own local 4pm,
+# and the weekly "report is ready" push on Sunday at its own local 6pm.
 # Replaces the Netlify scheduled push function.
 on:
   schedule:
@@ -23,3 +24,5 @@ jobs:
           cache: "npm"
       - run: npm ci
       - run: node scripts/send-push.mjs
+      # Weekly "report is ready" push — self-gates to Sunday ~6pm local time.
+      - run: node scripts/send-report-push.mjs

@@ -1468,6 +1468,19 @@ function KidDash({user,savedState,onLogout}){
   // Run the historical backfill shortly after app open (once)
   useEffect(()=>{ const t=setTimeout(()=>backfillOrders(),1800); return()=>clearTimeout(t); },[]);
 
+  // Deep-link: tapping the weekly "report is ready" push opens ?view=report,
+  // so land the parent straight on the Report Card, then clean the URL.
+  useEffect(()=>{
+    try{
+      const params=new URLSearchParams(location.search);
+      if(params.get("view")==="report"){
+        setNav("More"); setMoreView("Report");
+        const u=new URL(location.href); u.searchParams.delete("view");
+        history.replaceState({}, "", u.pathname+u.search+u.hash);
+      }
+    }catch(e){}
+  },[]);
+
   const matchPendingOrders = () => {
     setPending(prev=>{
       if(prev.length===0) return prev;
