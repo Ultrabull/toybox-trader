@@ -163,6 +163,14 @@ const CATS = [
   {k:"etf",   label:"🧺 Baskets", minAge:10},
   {k:"other", label:"🌍 Markets", minAge:13},
 ];
+// Kid-friendly "what's wrong?" choices for the Get Help / report-a-problem form.
+const BUG_CATS = [
+  {id:"broken",  icon:"🐞", label:"Something's broken"},
+  {id:"confused",icon:"😕", label:"I'm confused"},
+  {id:"money",   icon:"💸", label:"Wrong price or money"},
+  {id:"idea",    icon:"💡", label:"I have an idea!"},
+  {id:"other",   icon:"❓", label:"Something else"},
+];
 
 // ─── Lessons with adventure map ────────────────────
 const LESSONS = [
@@ -1049,6 +1057,9 @@ function KidDash({user,savedState,onLogout}){
   const [challenge,   setChallenge]   = useState(null);                          // 6 — head-to-head
   const [storyIdx,    setStoryIdx]    = useState(0);                             // 12 — daily story
   const [reportOpen,  setReportOpen]  = useState(false);                         // 8 — report card
+  const [bugCat,      setBugCat]      = useState("");                            // help/report-a-problem
+  const [bugMsg,      setBugMsg]      = useState("");
+  const [bugState,    setBugState]    = useState("idle");                        // idle | sending | done | error
   const [owned,       setOwned]       = useState(S.owned || []);                 // shop items owned
   const [equipAvatar, setEquipAvatar] = useState(S.equipAvatar || null);         // equipped avatar emoji (overrides default)
   const [equipTheme,  setEquipTheme]  = useState(S.equipTheme || null);          // equipped theme id (overrides default)
@@ -1602,6 +1613,27 @@ function KidDash({user,savedState,onLogout}){
     setInvCards(cs=>[...cs,{id:Date.now()+Math.random(),ticker:a.ticker,name:a.name,icon:a.icon,color:a.color,buyPrice:prices[a.ticker]||a.basePrice,qty:0,earnedAt:new Date().toLocaleDateString("en-US",{day:"numeric",month:"short"}),tier:"✨ Rare"}]);
   };
 
+  // Report a bug / problem — kid-friendly, emails our support address.
+  const sendBug = async () => {
+    if(bugState==="sending") return;
+    const cat = BUG_CATS.find(c=>c.id===bugCat);
+    setBugState("sending");
+    try {
+      const r = await fetch(apiUrl("/api/report-bug"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
+        category: cat?cat.label:"Something else",
+        message: bugMsg,
+        name: user.name,
+        age: user.age,
+        screen: nav,
+        appVersion: (typeof location!=="undefined"?location.host:""),
+        userAgent: (typeof navigator!=="undefined"?navigator.userAgent:""),
+      })});
+      const d = await r.json().catch(()=>({}));
+      if(d&&d.ok){ setBugState("done"); fx("reward",20); }
+      else setBugState("error");
+    } catch(e){ setBugState("error"); }
+  };
+
   const completeLesson = id => {
     const ls = LESSONS.find(l=>l.id===id);
     if(!ls) return;
@@ -1754,6 +1786,7 @@ function KidDash({user,savedState,onLogout}){
     {id:"Club",    icon:"🤝",label:"Club"},
     {id:"Report",  icon:"📊",label:"Report"},
     {id:"Backup",  icon:"💾",label:"Backup"},
+    {id:"Help",    icon:"🆘",label:"Get Help"},
   ];
 
   return(
@@ -2606,6 +2639,51 @@ function KidDash({user,savedState,onLogout}){
                     {portfolio.length<3?"You need more diversification! Own 3-5 different assets — like candy in multiple pockets!":doneLesson.length<3?"Complete more lessons! Each one gives you paper money AND makes you a smarter trader.":"Great diversification! Now focus on timing — check the daily news before each trade."}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Get Help — report a bug/problem, kid-friendly, emails support */}
+            {moreView==="Help"&&(
+              <div>
+                <div style={{background:"linear-gradient(135deg,rgba(16,185,129,.15),rgba(6,182,212,.08))",border:"1px solid rgba(16,185,129,.3)",borderRadius:"var(--rl)",padding:18,textAlign:"center",marginBottom:16}}>
+                  <div style={{fontSize:38,marginBottom:6}}>🆘</div>
+                  <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff",marginBottom:6}}>Something not working?</div>
+                  <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.7)",lineHeight:1.6}}>Tell us what's wrong and our team will fix it. Your message goes straight to the grown-ups at Toybox! 💚</div>
+                </div>
+
+                {bugState==="done"?(
+                  <div style={{background:"rgba(16,185,129,.12)",border:"1px solid rgba(16,185,129,.35)",borderRadius:16,padding:22,textAlign:"center"}}>
+                    <div style={{fontSize:44,marginBottom:8}}>🎉</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#86efac",marginBottom:6}}>Thank you!</div>
+                    <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.6,marginBottom:16}}>We got your message and we'll try to fix it fast. You're helping make Toybox better for everyone! 🌟</div>
+                    <button onClick={()=>{setBugState("idle");setBugCat("");setBugMsg("");}} style={{padding:"11px 22px",borderRadius:13,border:"none",background:"rgba(255,255,255,.14)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>Send another</button>
+                  </div>
+                ):(
+                  <>
+                    <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:9}}>1. What's happening? 👇</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginBottom:16}}>
+                      {BUG_CATS.map(c=>(
+                        <button key={c.id} onClick={()=>{setBugCat(c.id);setBugState("idle");}} style={{padding:"13px 10px",borderRadius:13,border:`2px solid ${bugCat===c.id?"rgba(16,185,129,.6)":"rgba(255,255,255,.14)"}`,background:bugCat===c.id?"rgba(16,185,129,.16)":"rgba(255,255,255,.05)",color:bugCat===c.id?"#fff":"rgba(255,255,255,.7)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer",textAlign:"left",lineHeight:1.35,display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:20,flexShrink:0}}>{c.icon}</span>{c.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:8}}>2. Tell us more <span style={{fontWeight:700,color:"rgba(255,255,255,.4)"}}>(you can skip this)</span></div>
+                    <textarea value={bugMsg} onChange={e=>setBugMsg(e.target.value)} maxLength={500} placeholder="Like: 'The price of Apple looks stuck' or 'I can't buy Roblox'..." style={{width:"100%",minHeight:90,padding:"12px 13px",borderRadius:13,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:13,fontWeight:600,lineHeight:1.5,resize:"none",outline:"none",boxSizing:"border-box"}}/>
+
+                    <button disabled={!bugCat||bugState==="sending"} onClick={sendBug} style={{width:"100%",marginTop:14,padding:15,borderRadius:15,border:"none",background:(!bugCat||bugState==="sending")?"rgba(255,255,255,.1)":"linear-gradient(135deg,#10b981,#059669)",color:(!bugCat||bugState==="sending")?"rgba(255,255,255,.4)":"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:(!bugCat||bugState==="sending")?"default":"pointer",boxShadow:(!bugCat||bugState==="sending")?"none":"0 6px 20px rgba(16,185,129,.4)"}}>
+                      {bugState==="sending"?"Sending... 📨":!bugCat?"Pick what's wrong first ☝️":"📨 Send to the Toybox team"}
+                    </button>
+
+                    {bugState==="error"&&(
+                      <div style={{marginTop:12,background:"rgba(245,158,11,.12)",border:"1px solid rgba(245,158,11,.3)",borderRadius:12,padding:13,fontSize:12,fontWeight:700,color:"#fde68a",lineHeight:1.6,textAlign:"center"}}>
+                        Hmm, that didn't send. A grown-up can email us instead:<br/>
+                        <a href={`mailto:toyboxtrader.support@gmail.com?subject=${encodeURIComponent("Toybox report: "+(BUG_CATS.find(c=>c.id===bugCat)?.label||"problem"))}&body=${encodeURIComponent(bugMsg)}`} style={{color:"#fff",fontWeight:800}}>toyboxtrader.support@gmail.com</a>
+                      </div>
+                    )}
+                    <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:12,lineHeight:1.5}}>Grown-ups can also email <strong style={{color:"rgba(255,255,255,.5)"}}>toyboxtrader.support@gmail.com</strong> anytime.</div>
+                  </>
+                )}
               </div>
             )}
           </div>

@@ -32,8 +32,9 @@ Pages project → **Settings → Environment variables → Production** → add:
 | `VAPID_PUBLIC_KEY` | (the value I gave you) | push (optional) |
 | `VAPID_PRIVATE_KEY` | (the value I gave you) | push (optional) |
 | `VAPID_SUBJECT` | `mailto:toyboxtrader.support@gmail.com` | push (optional) |
-| `RESEND_API_KEY` | your Resend API key | **email updates** (optional) — powers the ☁️ "Send test" email |
+| `RESEND_API_KEY` | your Resend API key | **email updates** (optional) — powers the ☁️ "Send test" email **and the in-app "🆘 Get Help" bug reports** |
 | `EMAIL_FROM` | e.g. `Toybox Trader <onboarding@resend.dev>` | email "from" address |
+| `SUPPORT_EMAIL` | e.g. `toyboxtrader.support@gmail.com` | where "🆘 Get Help" reports are sent (optional — defaults to this address) |
 
 Then **re-deploy** (Deployments → Retry deployment) so the functions pick them up.
 
