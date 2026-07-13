@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { apiUrl } from "./src/api";
 import BuildDemo from "./src/BuildDemo";
 const Build3D = lazy(() => import("./src/Build3D"));
+const DreamJobs = lazy(() => import("./src/DreamJobs"));
 
 // ─── Constants ─────────────────────────────────────
 const AVATARS = ["🚀","🦁","⚡","🐉","🦊","🐼","🦋","🎮","🏆","🌟","🦅","🐯","🐬","🦄","🐸","🎸","🧙","🎯","🐺","🦈"];
@@ -762,6 +763,7 @@ export default function ToyboxApp() {
     const q = new URLSearchParams(location.search);
     if (q.has("build3d")) return <Suspense fallback={<div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#87b7e8",color:"#0d2a4a",fontFamily:"'Fredoka One',cursive",fontSize:18}}>🧊 Loading 3D…</div>}><Build3D/></Suspense>;
     if (q.has("build")) return <BuildDemo/>;
+    if (q.has("jobs")) return <Suspense fallback={<div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#0d1b2e",color:"#fff",fontFamily:"'Fredoka One',cursive",fontSize:18}}>🏗️ Loading…</div>}><DreamJobs user={{id:"demo"}} onEarn={()=>{}} onClose={()=>{location.href="/";}}/></Suspense>;
   }
 
   return (
@@ -1093,6 +1095,7 @@ function KidDash({user,savedState,onLogout}){
   const [bugCat,      setBugCat]      = useState("");                            // help/report-a-problem
   const [bugMsg,      setBugMsg]      = useState("");
   const [bugState,    setBugState]    = useState("idle");                        // idle | sending | done | error
+  const [showJobs,    setShowJobs]    = useState(false);                         // Dream Jobs full-screen
   const [owned,       setOwned]       = useState(S.owned || []);                 // shop items owned
   const [equipAvatar, setEquipAvatar] = useState(S.equipAvatar || null);         // equipped avatar emoji (overrides default)
   const [equipTheme,  setEquipTheme]  = useState(S.equipTheme || null);          // equipped theme id (overrides default)
@@ -1832,6 +1835,7 @@ function KidDash({user,savedState,onLogout}){
     {id:"Club",    icon:"🤝",label:"Club"},
     {id:"Report",  icon:"📊",label:"Report"},
     {id:"Backup",  icon:"💾",label:"Backup"},
+    {id:"Jobs",    icon:"🏗️",label:"Dream Jobs"},
   ];
 
   return(
@@ -2731,10 +2735,38 @@ function KidDash({user,savedState,onLogout}){
                 )}
               </div>
             )}
+
+            {/* Dream Jobs — build careers in 3D + life lessons */}
+            {moreView==="Jobs"&&(
+              <div>
+                <div style={{background:"linear-gradient(135deg,rgba(124,58,237,.2),rgba(6,182,212,.08))",border:"1px solid rgba(124,58,237,.35)",borderRadius:"var(--rl)",padding:20,textAlign:"center",marginBottom:14}}>
+                  <div style={{fontSize:42,marginBottom:6}}>🏗️</div>
+                  <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",marginBottom:6}}>Dream Jobs</div>
+                  <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.6}}>Pick a job, <strong style={{color:"#fff"}}>build your place in 3D</strong>, then make real-life choices to learn how the world works — and earn coins for your Money Garden! 🪙</div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+                  {[["🏠","Build a home & learn about money"],["🎮","Build in real 3D — spin, zoom, stack blocks"],["💡","Make choices, learn life lessons"],["🪙","Earn coins that go into your trading cash"]].map(([ic,tx])=>(
+                    <div key={tx} style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,.05)",borderRadius:12,padding:"11px 13px"}}>
+                      <span style={{fontSize:22}}>{ic}</span>
+                      <span style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.8)"}}>{tx}</span>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={()=>setShowJobs(true)} style={{width:"100%",padding:15,borderRadius:15,border:"none",background:"linear-gradient(135deg,#7c3aed,#9333ea)",color:"#fff",fontFamily:"var(--fd)",fontSize:17,cursor:"pointer",boxShadow:"0 6px 22px rgba(124,58,237,.45)"}}>🚀 Start Building!</button>
+                <div style={{textAlign:"center",fontSize:11,fontWeight:700,color:"rgba(255,255,255,.35)",marginTop:10}}>Beta — more jobs (firefighter, shop, teacher) coming soon.</div>
+              </div>
+            )}
           </div>
         )}
 
       </div>{/* end main */}
+
+      {/* Dream Jobs full-screen (lazy — Three.js only loads when opened) */}
+      {showJobs&&(
+        <Suspense fallback={<div style={{position:"fixed",inset:0,zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",background:"#0d1b2e",color:"#fff",fontFamily:"var(--fd)",fontSize:18}}>🏗️ Loading…</div>}>
+          <DreamJobs user={user} onEarn={(n)=>{setCoins(c=>c+n);}} onClose={()=>setShowJobs(false)}/>
+        </Suspense>
+      )}
 
       {/* Bottom nav */}
       <nav className="bnav">
