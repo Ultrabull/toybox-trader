@@ -1,5 +1,6 @@
 // Shared logic for the scheduled Telegram reports. Runs in Node (GitHub
 // Actions), talking to Neon directly. Ported from the former Netlify function.
+import { buildInsight, insightLines } from "../src/insight.mjs";
 
 const CHAT_KEY = "toybox:telegram:chat";
 const STOCKS = ["AAPL", "RBLX", "DIS", "NVDA"];
@@ -96,7 +97,7 @@ export async function sendReports(period, sql, token, days, now = Date.now()) {
   if (bySpace.size === 0) return { families: 0, sent: 0 };
 
   const prices = await fetchPrices();
-  const heading = period === "weekly" ? "📅 Weekly report" : "🗓️ Monthly report";
+  const heading = period === "weekly" ? "📈 Your kids' Money Week" : "🗓️ Monthly report";
   let sent = 0;
 
   for (const [space, channels] of bySpace) {
@@ -133,11 +134,18 @@ export async function sendReports(period, sql, token, days, now = Date.now()) {
         changeStr = " (first report)";
       }
 
-      lines.push(`${kid.avatar || "•"} ${kid.name || "Kid"}`);
-      lines.push(`• Portfolio: ${money(value)}${changeStr}`);
-      lines.push(`• Trades: ${periodTrades} · Realized P/L: ${periodPnl >= 0 ? "+" : "-"}${money(Math.abs(periodPnl))}`);
-      lines.push(`• Badges: ${badges} · Level ${level}`);
-      lines.push("");
+      if (period === "weekly") {
+        // Learning-focused Parent Insight (what the kid learned + a talking point).
+        const ins = buildInsight(st, { name: kid.name || "Kid", sinceTs: cutoff, value });
+        for (const l of insightLines(ins, kid)) lines.push(l);
+        lines.push("");
+      } else {
+        lines.push(`${kid.avatar || "•"} ${kid.name || "Kid"}`);
+        lines.push(`• Portfolio: ${money(value)}${changeStr}`);
+        lines.push(`• Trades: ${periodTrades} · Realized P/L: ${periodPnl >= 0 ? "+" : "-"}${money(Math.abs(periodPnl))}`);
+        lines.push(`• Badges: ${badges} · Level ${level}`);
+        lines.push("");
+      }
 
       const payload = JSON.stringify({ value, at: now });
       await sql`

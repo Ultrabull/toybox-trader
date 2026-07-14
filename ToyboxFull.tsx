@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { apiUrl } from "./src/api";
 import Landing from "./src/Landing";
+import { buildInsight } from "./src/insight.mjs";
 import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS, loadSavings, saveSavings, loadAllowance, saveAllowance, loadFamily, saveFamily, loadGifts, saveGifts } from "./src/tasks";
 
 // ─── Constants ─────────────────────────────────────
@@ -1177,6 +1178,7 @@ function KidDash({user,savedState,onLogout}){
   const [buddy,        setBuddy]      = useState(S.buddy || null);  // chosen starter id
   const [pickBuddy,    setPickBuddy]  = useState(false);  // starter picker open
   const [doneLesson,   setDoneLesson] = useState(S.doneLesson || []);
+  const [lessonDates,  setLessonDates]= useState(S.lessonDates || {});          // {lessonId: completedAt} — powers the weekly Parent Insight
   const [doneMission, setDoneMission] = useState(S.doneMission || []);
   const [tourStep,    setTourStep]    = useState(1);
   const [tourDone,    setTourDone]    = useState(S.tourDone ?? false);  // persisted: intro tour shows only once
@@ -1260,7 +1262,7 @@ function KidDash({user,savedState,onLogout}){
   // AUTO-SAVE: persist all state whenever anything important changes
   useEffect(()=>{
     if(!hydrated||!user?.id) return;
-    const snapshot = {cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
+    const snapshot = {cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
     saveData(stateKey(user.id), snapshot);
   },[cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,hydrated]);
 
@@ -1356,7 +1358,7 @@ function KidDash({user,savedState,onLogout}){
     const account={id:user.id,name:user.name,avatar:user.avatar,age:user.age,email:user.email,pin:user.pin,theme:user.theme,joinedAt:user.joinedAt};
     // Mirror the auto-save snapshot exactly, so a restore brings back
     // EVERYTHING — pet buddy, equipped cosmetics, pending orders, token day.
-    const state={cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
+    const state={cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
     const code=makeBackupCode(account,state);
     setBackupCode(code); setCopied(false); fx("reward",20);
   };
@@ -1898,7 +1900,7 @@ function KidDash({user,savedState,onLogout}){
     // Reward only granted after passing the quiz (called from answerQuiz)
     if(!doneLesson.includes(id)){
       const reward = ls.cashReward||50;
-      setDoneLesson(d=>[...d,id]); setXp(x=>x+200); setCoins(c=>c+50); setCash(c=>c+reward);
+      setDoneLesson(d=>[...d,id]); setLessonDates(m=>({...m,[id]:Date.now()})); setXp(x=>x+200); setCoins(c=>c+50); setCash(c=>c+reward);
       setLessonProg(p=>{const n={...p};delete n[id];return n;});
       // Which lessons unlock a "try it now" action?
       const tryMap = {
@@ -4260,8 +4262,8 @@ function ParentDash({kids,onResetKid,onLogout}){
           ):kids.length===0?(
             <div style={{textAlign:"center",padding:"40px 20px",fontSize:13,color:"rgba(255,255,255,.55)",fontWeight:600}}>Kids need accounts before there's a report to show.</div>
           ):(<>
-            <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff",marginBottom:4}}>📈 Family Report</div>
-            <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.5)",marginBottom:14}}>How the whole family is doing right now.</div>
+            <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#fff",marginBottom:4}}>📈 Parent Insight — this week</div>
+            <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.5)",marginBottom:14}}>What each kid learned, and a question to chat about together. Also sent to you every Sunday.</div>
             {kids.map(k=>{
               const st=kidStates[k.id];
               const total=kidTotal(k), gain=total-1000;
@@ -4269,22 +4271,37 @@ function ParentDash({kids,onResetKid,onLogout}){
               const sv=savings[k.id];
               const pm=owed[k.id]||0;
               const lessons=st?.doneLesson?.length||0;
-              const streak=st?.streak||0;
+              const insight=buildInsight(st||{},{name:k.name,sinceTs:Date.now()-7*24*3600*1000,value:total});
               return(
                 <div key={k.id} style={{background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:15,marginBottom:12}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
                     <span style={{fontSize:30}}>{k.avatar}</span>
-                    <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{k.name}</div><div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.45)"}}>🔥 {streak}-day streak</div></div>
+                    <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{k.name}’s Money Week</div><div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.4)"}}>This week{insight.levelName?` · ${insight.levelName}`:""}</div></div>
                     <div style={{textAlign:"right"}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:gain>=0?"#86efac":"#fca5a5"}}>{gain>=0?"+":""}{f$(gain)}</div><div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)"}}>MONEY GARDEN</div></div>
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-                    {[["✅ Tasks done",`${doneTasks}`],["📚 Lessons",`${lessons}`],["🏦 Saved",sv?`${sv.saved} 🪙`:"—"],["💵 Pocket money",pm>0?f$(pm):"—"]].map(([lbl,val])=>(
+                  <div style={{display:"flex",gap:10,padding:"12px 0",borderTop:"1px solid rgba(255,255,255,.08)"}}>
+                    <span style={{fontSize:18}}>🎓</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:10,fontWeight:800,letterSpacing:".06em",color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:3}}>What {k.name} learned</div>
+                      {insight.learned.length?(
+                        <div style={{fontSize:13,fontWeight:600,color:"#fff",lineHeight:1.5}}>Learned <strong style={{color:"#c4b5fd"}}>{insight.learned.map(l=>l.concept).join(" & ")}</strong> — {insight.learned.length} lesson{insight.learned.length>1?"s":""} this week{insight.leveledUp&&insight.levelName?<span> · 🏅 reached <strong style={{color:"#fde68a"}}>{insight.levelName}</strong>!</span>:null}</div>
+                      ):(
+                        <div style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,.72)",lineHeight:1.5}}>Took it easy this week{insight.inProgressTitle?<> — partway through <strong style={{color:"#c4b5fd"}}>“{insight.inProgressTitle}”</strong></>:null}. A great week to jump back in!</div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"2px 0 12px"}}>
+                    {[["📚 Lessons",`${lessons}/${insight.totalCount}`],["⚡ Trades (7d)",`${insight.trades}`],["✅ Tasks done",`${doneTasks}`],["🏦 Saved",sv?`${sv.saved} 🪙`:pm>0?f$(pm)+" 💵":"—"]].map(([lbl,val])=>(
                       <div key={lbl} style={{background:"rgba(255,255,255,.05)",borderRadius:10,padding:"9px 11px"}}><div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.4)"}}>{lbl}</div><div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff"}}>{val}</div></div>
                     ))}
                   </div>
-                  <div style={{background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.25)",borderRadius:11,padding:11,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.5}}>
-                    💬 {doneTasks===0?`Ask ${k.name} which chore they'd like to try first this week.`:sv&&sv.saved>0?`${k.name} is saving for "${sv.name}"! Ask them why they picked it and how it feels to watch it grow.`:gain>=0?`${k.name} is up ${f$(Math.abs(gain))} — ask what their best decision was.`:`${k.name} is down a bit — a great chance to talk about staying calm and playing the long game.`}
+                  <div style={{background:"rgba(236,72,153,.1)",border:"1px solid rgba(236,72,153,.28)",borderRadius:12,padding:12}}>
+                    <div style={{fontSize:10,fontWeight:800,letterSpacing:".06em",color:"#f472b6",textTransform:"uppercase",marginBottom:5}}>💬 Talk about it together</div>
+                    <div style={{fontSize:13.5,fontWeight:700,color:"#fff",lineHeight:1.5}}>“{insight.question}”</div>
                   </div>
+                  {insight.nextUp&&insight.learned.length>0&&(
+                    <div style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,.5)",marginTop:10}}>➡️ Next up: <strong style={{color:"#fff"}}>{insight.nextUp.title}</strong></div>
+                  )}
                 </div>
               );
             })}
