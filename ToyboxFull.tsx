@@ -1863,9 +1863,18 @@ function KidDash({user,savedState,onLogout}){
 
   // Ask Toby — send a question to the kid-safe AI money coach with the child's
   // own play-money context. History is kept short; roles are user/assistant.
+  const COACH_DAILY_LIMIT = 10;   // caps API cost + healthy screen-time
+  const coachDayKey = () => `toybox:coach:${user?.id||"k"}:${new Date().toDateString()}`;
+  const coachUsedToday = () => { try{ return parseInt(localStorage.getItem(coachDayKey())||"0",10)||0; }catch(e){ return 0; } };
   const sendCoach = async (text) => {
     const q = (text||coachInput).trim();
     if(!q || coachBusy) return;
+    if(coachUsedToday() >= COACH_DAILY_LIMIT){
+      setCoachMsgs(m=>[...m,{role:"user",content:q},{role:"assistant",content:`🦊 Phew, we've talked a LOT today — ${COACH_DAILY_LIMIT} questions! I need a little rest. Come back tomorrow and ask me more. See you then! 💤`}]);
+      setCoachInput("");
+      return;
+    }
+    try{ localStorage.setItem(coachDayKey(), String(coachUsedToday()+1)); }catch(e){}
     const history = [...coachMsgs, {role:"user",content:q}];
     setCoachMsgs(history); setCoachInput(""); setCoachBusy(true);
     try {
@@ -3127,7 +3136,7 @@ function KidDash({user,savedState,onLogout}){
                     <textarea value={coachInput} onChange={e=>setCoachInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendCoach();}}} maxLength={300} placeholder="Ask Toby a money question…" rows={1} style={{flex:1,padding:"12px 13px",borderRadius:14,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:14,fontWeight:600,resize:"none",outline:"none",boxSizing:"border-box",lineHeight:1.4}}/>
                     <button onClick={()=>sendCoach()} disabled={!coachInput.trim()||coachBusy} style={{flexShrink:0,width:48,height:48,borderRadius:14,border:"none",background:(!coachInput.trim()||coachBusy)?"rgba(255,255,255,.1)":"linear-gradient(135deg,#f59e0b,#f97316)",color:"#fff",fontSize:20,cursor:(!coachInput.trim()||coachBusy)?"default":"pointer"}}>➤</button>
                   </div>
-                  <div style={{fontSize:10.5,fontWeight:600,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:10,lineHeight:1.5}}>🦊 Toby only talks about money &amp; your game. Never share your real name, address or passwords.</div>
+                  <div style={{fontSize:10.5,fontWeight:600,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:10,lineHeight:1.5}}>🦊 Toby answers up to 10 questions a day &amp; only talks about money &amp; your game. Never share your real name, address or passwords.</div>
                 </>)}
               </div>
             )}
