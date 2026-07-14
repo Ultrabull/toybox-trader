@@ -1191,6 +1191,7 @@ function KidDash({user,savedState,onLogout}){
   const [bugMsg,      setBugMsg]      = useState("");
   const [bugEmail,    setBugEmail]    = useState("");                            // optional grown-up email for a reply/confirmation
   const [bugConfirmed,setBugConfirmed]= useState(false);                         // server actually sent the confirmation copy
+  const [bugErr,      setBugErr]      = useState("");                            // last send failure reason (for diagnostics)
   const [bugState,    setBugState]    = useState("idle");                        // idle | sending | done | error
   const [owned,       setOwned]       = useState(S.owned || []);                 // shop items owned
   const [equipAvatar, setEquipAvatar] = useState(S.equipAvatar || null);         // equipped avatar emoji (overrides default)
@@ -1853,8 +1854,8 @@ function KidDash({user,savedState,onLogout}){
       })});
       const d = await r.json().catch(()=>({}));
       if(d&&d.ok){ setBugConfirmed(!!d.confirmed); setBugState("done"); fx("reward",20); }
-      else setBugState("error");
-    } catch(e){ setBugState("error"); }
+      else { setBugErr((d&&d.error)?String(d.error):`http ${r.status}`); setBugState("error"); }
+    } catch(e){ setBugErr(String(e&&e.message||e)); setBugState("error"); }
   };
 
   const completeLesson = id => {
@@ -3100,6 +3101,7 @@ function KidDash({user,savedState,onLogout}){
                       <div style={{marginTop:12,background:"rgba(245,158,11,.12)",border:"1px solid rgba(245,158,11,.3)",borderRadius:12,padding:13,fontSize:12,fontWeight:700,color:"#fde68a",lineHeight:1.6,textAlign:"center"}}>
                         Hmm, that didn't send. A grown-up can email us instead:<br/>
                         <a href={`mailto:toyboxtrader.support@gmail.com?subject=${encodeURIComponent("Toybox report: "+(BUG_CATS.find(c=>c.id===bugCat)?.label||"problem"))}&body=${encodeURIComponent(bugMsg)}`} style={{color:"#fff",fontWeight:800}}>toyboxtrader.support@gmail.com</a>
+                        {bugErr&&<div style={{marginTop:8,fontSize:10,fontWeight:600,color:"rgba(255,255,255,.4)"}}>(reason: {bugErr})</div>}
                       </div>
                     )}
                     <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:12,lineHeight:1.5}}>Grown-ups can also email <strong style={{color:"rgba(255,255,255,.5)"}}>toyboxtrader.support@gmail.com</strong> anytime.</div>
