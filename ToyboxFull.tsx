@@ -574,6 +574,8 @@ body[data-flow="auth-mid"] #tbx-sync-btn,body[data-flow="auth-mid"] #tbx-push-bt
 .twofa-inp{width:42px;height:52px;border-radius:12px;border:2px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#fff;font-family:var(--fd);font-size:22px;text-align:center;outline:none;transition:all .2s}
 .twofa-inp:focus{border-color:#fff;background:rgba(255,255,255,.18)}
 .twofa-inp.filled{border-color:rgba(255,255,255,.5)}
+.email-code-box.tap-ready{animation:tapPulse 1.3s ease-in-out infinite}
+@keyframes tapPulse{0%,100%{box-shadow:0 0 0 0 rgba(124,58,237,.45)}50%{box-shadow:0 0 0 7px rgba(124,58,237,0)}}
 .email-pop{background:rgba(255,255,255,.96);border-radius:var(--rl);overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.3);margin-top:14px;animation:popUp .4s cubic-bezier(.34,1.56,.64,1)}
 .email-hd{background:linear-gradient(135deg,#1d4ed8,#2563eb);padding:11px 15px;display:flex;align-items:center;gap:8px}
 .email-logo{width:26px;height:26px;border-radius:6px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
@@ -999,33 +1001,33 @@ function PinScreen({kid,onVerified,onBack}){
 
 function TwoFA({email,code,who,isReg,onVerified,onBack}){
   const [vals,setVals]=useState(["","","","","",""]);
-  const [status,setStatus]=useState("waiting"); // waiting | arriving | done
+  const [status,setStatus]=useState("waiting"); // waiting | ready | arriving | done
   const doneRef=useRef(false);
   const finish=()=>{ if(doneRef.current)return; doneRef.current=true; setStatus("done"); setTimeout(onVerified,700); };
-  // AUTOFILL: kids never type the code. After a short beat, the code "arrives"
-  // and fills itself in digit-by-digit, then verifies automatically.
+  // The pretend email "arrives" after a short beat. Then the KID taps the code
+  // to fill it in themselves (no typing, no autofill). Tapping fills the boxes
+  // digit-by-digit, then verifies — so entering the code is their own action.
   useEffect(()=>{
-    let cancelled=false;
-    const digits=String(code).split("");
-    const t=setTimeout(()=>{
-      if(cancelled)return;
-      setStatus("arriving");
-      digits.forEach((d,i)=>setTimeout(()=>{
-        if(cancelled)return;
-        setVals(v=>{const n=[...v];n[i]=d;return n;});
-        if(i===digits.length-1) setTimeout(()=>{ if(!cancelled) finish(); },500);
-      }, i*190));
-    },1100);
-    return ()=>{ cancelled=true; clearTimeout(t); };
+    const t=setTimeout(()=>setStatus(s=>s==="waiting"?"ready":s),1100);
+    return ()=>clearTimeout(t);
   },[]);
-  const fillNow=()=>{ if(doneRef.current)return; setVals(String(code).split("")); finish(); }; // tap to skip the wait
+  const fillIn=()=>{
+    if(doneRef.current||status!=="ready")return;   // only once the code has arrived
+    setStatus("arriving");
+    const digits=String(code).split("");
+    digits.forEach((d,i)=>setTimeout(()=>{
+      setVals(v=>{const n=[...v];n[i]=d;return n;});
+      if(i===digits.length-1) setTimeout(finish,450);
+    }, i*150));
+  };
+  const tappable=status==="ready";
   return(
     <div className="page" style={{overflowY:"auto"}}>
       <div className="card">
         <div style={{textAlign:"center",marginBottom:16}}>
           <div style={{fontSize:42,marginBottom:8}}>🔐</div>
           <div className="ttl">Security Lesson!</div>
-          <div className="sub">Watch how <strong style={{color:"#fff"}}>2-Factor Login</strong> keeps you safe — no real email is sent, this is just for learning! 🎓</div>
+          <div className="sub">Learn how <strong style={{color:"#fff"}}>2-Factor Login</strong> keeps you safe — no real email is sent, this is just for learning! 🎓</div>
         </div>
         <div style={{background:"rgba(16,185,129,.1)",border:"1px solid rgba(16,185,129,.25)",borderRadius:13,padding:13,marginBottom:14,fontSize:12,fontWeight:700,color:"rgba(255,255,255,.85)",lineHeight:1.6}}>
           🔐 <strong>Why 2FA?</strong> Even if someone steals your PIN, they can't log in without this code. It's like having two locks on a door. Real apps like Google, Apple and banks all use this — you're learning how the pros stay safe!
@@ -1033,15 +1035,20 @@ function TwoFA({email,code,who,isReg,onVerified,onBack}){
         <div style={{fontFamily:"var(--fd)",fontSize:11,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>Your 6-digit code</div>
         <div className="twofa-row">{vals.map((v,i)=><input key={i} className={`twofa-inp ${v?"filled":""}`} value={v} readOnly tabIndex={-1}/>)}</div>
         <div style={{textAlign:"center",fontSize:12,fontWeight:800,marginBottom:8,color:status==="done"?"#86efac":"#c4b5fd"}}>
-          {status==="waiting"?"📩 Your code is on its way…":status==="arriving"?"✨ Filling it in for you…":"✅ Verified! Great job 🎓"}
+          {status==="waiting"?"📩 Your code is on its way…":status==="ready"?"👆 Tap your code below to fill it in!":status==="arriving"?"✨ Great! Filling it in…":"✅ Verified! Great job 🎓"}
         </div>
-        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8}}>👇 Pretend email — in a real app this would land in your inbox. No typing needed!</div>
-        <div className="email-pop" onClick={fillNow} style={{cursor:"pointer"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.4)",textAlign:"center",marginBottom:8}}>👇 Pretend email — in a real app this would land in your inbox.</div>
+        <div className="email-pop" onClick={fillIn} style={{cursor:tappable?"pointer":"default",opacity:status==="waiting"?.55:1,transition:"opacity .3s"}}>
           <div className="email-hd"><div className="email-logo">🧸</div><div><div style={{fontSize:11,fontWeight:800,color:"#fff"}}>Toybox Trader (pretend)</div><div style={{fontSize:10,color:"rgba(255,255,255,.6)",fontWeight:600}}>demo@toyboxtrader.com → {email}</div></div></div>
           <div className="email-bd">
             <div className="email-sub">🔐 Your practice security code</div>
-            <div className="email-txt">Hi {who}! 👋 Here's your code — it fills in all by itself:</div>
-            <div className="email-code-box"><div className="email-code">{code}</div><div style={{fontSize:10,fontWeight:700,color:"#7c3aed",marginTop:4}}>✨ Filling in automatically… (tap to skip)</div></div>
+            <div className="email-txt">Hi {who}! 👋 {status==="waiting"?"Your code is arriving…":"Here's your code — tap it to enter it:"}</div>
+            <button type="button" onClick={fillIn} disabled={!tappable} className={`email-code-box${tappable?" tap-ready":""}`} style={{display:"block",width:"100%",borderColor:tappable?"#7c3aed":"rgba(124,58,237,.2)",cursor:tappable?"pointer":"default"}}>
+              <div className="email-code">{code}</div>
+              <div style={{fontSize:10.5,fontWeight:800,color:"#a78bfa",marginTop:5}}>
+                {status==="waiting"?"📩 arriving…":status==="ready"?"👆 Tap here to fill in your code!":status==="arriving"?"✨ Filling in…":"✅ Done!"}
+              </div>
+            </button>
             <div className="email-foot">This is why 2FA matters — even if someone has your password, they don't have your email! 🔒</div>
           </div>
         </div>
