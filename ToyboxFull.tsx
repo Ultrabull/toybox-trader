@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { apiUrl } from "./src/api";
 import Landing from "./src/Landing";
-import { buildInsight } from "./src/insight.mjs";
+import { buildInsight, CURRICULUM } from "./src/insight.mjs";
 import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS, loadSavings, saveSavings, loadAllowance, saveAllowance, loadFamily, saveFamily, loadGifts, saveGifts } from "./src/tasks";
 
 // ─── Constants ─────────────────────────────────────
@@ -401,6 +401,16 @@ const LESSON_LEVEL = {
   options:"Pro", psychology:"Pro", value_growth:"Pro", time_in_market:"Pro", exit_strategy:"Pro",
 };
 const levelOf=(id)=>LESSON_LEVELS[LESSON_LEVEL[id]]||LESSON_LEVELS.Grow;
+
+// ─── The money course: 4 Levels (Levels 1–2 free, 3–4 are Toybox Plus) ──
+const LEVEL_META = {
+  1:{name:"Money Basics",  color:"#22c55e", age:"Ages 8+",  free:true},
+  2:{name:"First Investor",color:"#06b6d4", age:"Ages 9+",  free:true},
+  3:{name:"Smart Investor",color:"#8b5cf6", age:"Ages 11+", free:false},
+  4:{name:"Pro Investor",  color:"#ec4899", age:"Ages 13+", free:false},
+};
+const LEVEL_OF = Object.fromEntries(CURRICULUM.map(c=>[c.id,c.level]));   // lessonId → 1..4
+const COURSE_ORDER = CURRICULUM.map(c=>c.id);                            // lesson ids in course order
 
 // ─── Daily stories ─────────────────────────────────
 const DAILY_STORIES = [
@@ -1766,6 +1776,7 @@ function KidDash({user,savedState,onLogout}){
   },[lessonSlide, lesson?.id]);
 
   const openLesson = ls => {
+    if((LEVEL_OF[ls.id]||1)>=3 && !isPremium){ setShowPlus(true); return; }   // Levels 3–4 are Plus
     const saved = lessonProgress[ls.id];
     setLesson(ls);
     setLessonSlide(saved?.slide||0);
@@ -2396,22 +2407,33 @@ function KidDash({user,savedState,onLogout}){
             {/* Adventure map */}
             <div className="map-wrap">
               <div className="map-path"/>
-              {LESSONS.map((ls,i)=>{
-                const done=doneLesson.includes(ls.id);
-                const curr=!done&&doneLesson.length===i;
-                const locked=!done&&!curr;
-                const isRight=i%2===1;
-                return(
-                  <div key={ls.id} className={`map-node ${isRight?"right":""}`}>
-                    <div className={`map-circle ${done?"done":curr?"curr":"lock"}`}>{done?"✅":ls.icon}</div>
-                    <div className={`map-content ${done?"done":curr?"curr":""}`} style={{opacity:locked?.5:1}}>
-                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2,flexWrap:"wrap"}}>
-                        <div className="map-island" style={{marginBottom:0}}>{ls.island}</div>
-                        {(()=>{const lv=levelOf(ls.id);return(
-                          <span style={{fontSize:8.5,fontWeight:800,background:`${lv.color}22`,color:lv.color,padding:"2px 7px",borderRadius:100,letterSpacing:".3px"}}>{lv.emoji} {lv.label} · {lv.age}</span>
-                        );})()}
+              {(()=>{
+                const ORDERED=COURSE_ORDER.map(id=>LESSONS.find(l=>l.id===id)).filter(Boolean);
+                const firstUndone=ORDERED.findIndex(l=>!doneLesson.includes(l.id));
+                let prevLevel=0;
+                return ORDERED.flatMap((ls,i)=>{
+                  const lvl=LEVEL_OF[ls.id]||1; const meta=LEVEL_META[lvl];
+                  const plusLocked=!meta.free&&!isPremium;
+                  const done=doneLesson.includes(ls.id);
+                  const curr=!done&&i===firstUndone&&!plusLocked;
+                  const locked=!done&&!curr&&!plusLocked;
+                  const isRight=i%2===1;
+                  const els=[];
+                  if(lvl!==prevLevel){ prevLevel=lvl; els.push(
+                    <div key={"lvl"+lvl} style={{textAlign:"center",margin:i===0?"2px 0 14px":"26px 0 14px"}}>
+                      <div style={{display:"inline-flex",alignItems:"center",gap:8,background:`${meta.color}18`,border:`1.5px solid ${meta.color}55`,borderRadius:100,padding:"7px 16px"}}>
+                        <span style={{fontFamily:"var(--fd)",fontSize:13.5,color:meta.color}}>Level {lvl} · {meta.name}</span>
+                        <span style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.5)"}}>{meta.age}</span>
+                        {!meta.free&&<span style={{fontSize:9,fontWeight:800,background:"rgba(124,58,237,.35)",color:"#c4b5fd",padding:"2px 8px",borderRadius:100}}>⭐ PLUS</span>}
                       </div>
-                      <div className="map-title" style={{color:locked?"rgba(255,255,255,.4)":"#fff"}}>{ls.title}</div>
+                    </div>
+                  ); }
+                  els.push(
+                  <div key={ls.id} className={`map-node ${isRight?"right":""}`}>
+                    <div className={`map-circle ${done?"done":curr?"curr":"lock"}`} style={plusLocked?{opacity:.85}:{}}>{done?"✅":plusLocked?"⭐":ls.icon}</div>
+                    <div className={`map-content ${done?"done":curr?"curr":""}`} style={{opacity:(locked||plusLocked)?.6:1}}>
+                      <div className="map-island" style={{marginBottom:2}}>{ls.island}</div>
+                      <div className="map-title" style={{color:(locked||plusLocked)?"rgba(255,255,255,.5)":"#fff"}}>{ls.title}</div>
                       <div className="map-rewards">
                         <div className="map-rew-chip" style={{background:"rgba(245,158,11,.15)",color:"#f59e0b"}}>💵 +{fs$(ls.cashReward)}</div>
                         <div className="map-rew-chip" style={{background:"rgba(6,182,212,.12)",color:"#67e8f9"}}>⚡ +200 XP</div>
@@ -2419,11 +2441,14 @@ function KidDash({user,savedState,onLogout}){
                       </div>
                       {done&&<div style={{fontSize:11,fontWeight:800,color:"#86efac"}}>✅ Completed! Cash deposited!</div>}
                       {curr&&<button onClick={()=>openLesson(ls)} style={{padding:"9px 18px",borderRadius:100,border:"none",background:`linear-gradient(135deg,${ls.color},${ls.color}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer",boxShadow:`0 3px 10px ${ls.color}44`}}>Sail here &amp; earn {fs$(ls.cashReward)} →</button>}
-                      {locked&&<div style={{fontSize:11,color:"rgba(255,255,255,.3)",fontWeight:600}}>🔒 Complete previous island first</div>}
+                      {plusLocked&&<button onClick={()=>{setShowPlus(true);setAskedPlus(false);}} style={{padding:"9px 16px",borderRadius:100,border:"none",background:"linear-gradient(135deg,#7c3aed,#a855f7)",color:"#fff",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>⭐ Unlock with Plus</button>}
+                      {locked&&<div style={{fontSize:11,color:"rgba(255,255,255,.3)",fontWeight:600}}>🔒 Finish the lesson before this</div>}
                     </div>
                   </div>
-                );
-              })}
+                  );
+                  return els;
+                });
+              })()}
             </div>
           </div>
         )}
