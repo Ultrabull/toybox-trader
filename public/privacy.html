@@ -20,7 +20,7 @@
   <body>
     <div class="wrap">
       <h1>🧸 Toybox Trader — Privacy Policy</h1>
-      <p class="muted">Last updated: <strong>July 11, 2026</strong> · Contact: <strong>toyboxtrader.support@gmail.com</strong></p>
+      <p class="muted">Last updated: <strong>July 14, 2026</strong> · Contact: <strong>toyboxtrader.support@gmail.com</strong></p>
 
       <p>Toybox Trader ("we", "the app") is a play-money investing simulator that helps kids
       learn about markets. Protecting children's privacy matters to us. This policy explains what
@@ -34,6 +34,7 @@
         <li><strong>Family account (optional):</strong> a parent email and password, used only to sync a family's accounts across devices. The password is never stored — it is converted on the device into a key we cannot reverse.</li>
         <li><strong>Notifications (optional):</strong> if a parent enables Telegram alerts or on-device reminders, we store a Telegram chat ID and/or a browser push subscription and the device's timezone.</li>
         <li><strong>Support / bug reports (optional):</strong> if someone uses the in-app "Get Help" form, we receive the message they type, the category, and basic context (which screen, app version, device type). A grown-up may optionally add an email so we can reply and send a confirmation; that email is used only to respond to the report.</li>
+        <li><strong>AI helper "Toby" (optional, paid plans):</strong> if a child uses Toby, the questions they type plus limited context (first name, age, and in-app play-money progress) are sent to our AI provider to generate a reply. We instruct the child not to share real personal details, and Toby is limited to money/learning topics. We do not use these chats for advertising or profiling.</li>
       </ul>
 
       <h2>How we use it</h2>
@@ -52,12 +53,35 @@
       served over a reputable cloud hosting provider (Cloudflare). Traffic is encrypted in transit
       (HTTPS).</p>
 
-      <h2>Children's privacy (COPPA)</h2>
-      <p>Toybox Trader is intended for use by children under the supervision of a parent or guardian.
-      We collect only the limited information needed to run the app, and we do not knowingly use
-      children's data for any commercial purpose beyond providing the service. Account creation and
-      the parent area are behind a <strong>parental gate</strong>. Parents can review, export, or
-      delete their children's data at any time (see below).</p>
+      <h2>Service providers we use</h2>
+      <p>We share the minimum data needed with trusted providers who process it only on our behalf:</p>
+      <ul>
+        <li><strong>Cloudflare</strong> — hosting, and (if enabled) forwarding email sent to our support address.</li>
+        <li><strong>Neon (PostgreSQL)</strong> — the synced family database.</li>
+        <li><strong>Anthropic</strong> — powers the optional AI helper "Toby" (receives the child's question and limited play-progress context to generate a reply).</li>
+        <li><strong>Resend</strong> — delivers support/confirmation and report emails.</li>
+        <li><strong>Telegram</strong> — delivers alerts only if a parent connects it.</li>
+        <li>A <strong>payment processor</strong> (e.g., Stripe or an app store) — only if you subscribe; card details go directly to them, not to us.</li>
+      </ul>
+      <p>We do not sell or rent personal information, and we do not allow these providers to use your
+      data for their own advertising.</p>
+
+      <h2>Children's privacy (COPPA and similar laws)</h2>
+      <p>Toybox Trader is intended for children used under the supervision of a parent or guardian, and
+      we design it to comply with the U.S. Children's Online Privacy Protection Act (COPPA) and
+      comparable rules (such as the UK Children's Code and GDPR-K).</p>
+      <ul>
+        <li>A parent or guardian sets up or supervises a child's use, and the parent area is behind a
+        <strong>parental gate</strong>. By enabling the Service for a child, the parent consents to the
+        limited collection described here.</li>
+        <li>We practice <strong>data minimization</strong> — we ask for a nickname (not a real name is
+        required), an age band, and only what the features need — and we do <strong>not</strong> use
+        children's data for advertising, profiling, or any commercial purpose beyond running the Service.</li>
+        <li>Parents can <strong>review, export, or delete</strong> their child's data at any time
+        (see below), and can withdraw consent by deleting the account.</li>
+        <li>If we learn we collected a child's data without the required parental consent, we will
+        delete it. Contact us any time about your child's information.</li>
+      </ul>
 
       <h2>Parental rights &amp; choices</h2>
       <ul>
