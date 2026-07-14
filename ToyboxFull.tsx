@@ -1192,6 +1192,9 @@ function KidDash({user,savedState,onLogout}){
   const [bugEmail,    setBugEmail]    = useState("");                            // optional grown-up email for a reply/confirmation
   const [bugConfirmed,setBugConfirmed]= useState(false);                         // server actually sent the confirmation copy
   const [bugErr,      setBugErr]      = useState("");                            // last send failure reason (for diagnostics)
+  const [coachMsgs,   setCoachMsgs]   = useState([]);                            // "Ask Toby" AI coach chat: {role:"user"|"assistant",content}
+  const [coachInput,  setCoachInput]  = useState("");
+  const [coachBusy,   setCoachBusy]   = useState(false);
   const [bugState,    setBugState]    = useState("idle");                        // idle | sending | done | error
   const [owned,       setOwned]       = useState(S.owned || []);                 // shop items owned
   const [equipAvatar, setEquipAvatar] = useState(S.equipAvatar || null);         // equipped avatar emoji (overrides default)
@@ -1858,6 +1861,27 @@ function KidDash({user,savedState,onLogout}){
     } catch(e){ setBugErr(String(e&&e.message||e)); setBugState("error"); }
   };
 
+  // Ask Toby — send a question to the kid-safe AI money coach with the child's
+  // own play-money context. History is kept short; roles are user/assistant.
+  const sendCoach = async (text) => {
+    const q = (text||coachInput).trim();
+    if(!q || coachBusy) return;
+    const history = [...coachMsgs, {role:"user",content:q}];
+    setCoachMsgs(history); setCoachInput(""); setCoachBusy(true);
+    try {
+      const holdings = portfolio.map(h=>{ const a=MARKET.find(m=>m.ticker===h.ticker); return {ticker:h.ticker,name:a?a.name:h.ticker,qty:h.qty,value:h.qty*(prices[h.ticker]||h.avgCost)}; });
+      const r = await fetch(apiUrl("/api/coach"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
+        messages: history,
+        profile: {name:user?.name, age:user?.age},
+        stats: {cash, coins, xp, streak, lessonsDone:doneLesson.length, lessonsTotal:LESSONS.length, holdings},
+      })});
+      const d = await r.json().catch(()=>({}));
+      if(d&&d.ok&&d.reply) setCoachMsgs(m=>[...m,{role:"assistant",content:d.reply}]);
+      else setCoachMsgs(m=>[...m,{role:"assistant",content: d?.error==="coach-not-configured" ? "🦊 Toby is taking a little nap right now — check back soon!" : "🦊 Oops, my whiskers got crossed. Try asking me again!"}]);
+    } catch(e){ setCoachMsgs(m=>[...m,{role:"assistant",content:"🦊 I couldn't hear you — is your internet okay? Try again!"}]); }
+    setCoachBusy(false);
+  };
+
   const completeLesson = id => {
     const ls = LESSONS.find(l=>l.id===id);
     if(!ls) return;
@@ -2000,6 +2024,9 @@ function KidDash({user,savedState,onLogout}){
 
   // Grouped so the drawer reads as tidy sections instead of one long grid.
   const MORE_GROUPS=[
+    {title:"🦊 Money Coach",items:[
+      {id:"Coach",   icon:"🦊",label:"Ask Toby"},
+    ]},
     {title:"💰 Money & Tasks",items:[
       {id:"Tasks",   icon:"✅",label:"My Tasks"},
       ...(ttEnabled?[{id:"Together",icon:"💛",label:"Together"}]:[]),
@@ -3057,6 +3084,51 @@ function KidDash({user,savedState,onLogout}){
                     {portfolio.length<3?"You need more diversification! Own 3-5 different assets — like candy in multiple pockets!":doneLesson.length<3?"Complete more lessons! Each one gives you paper money AND makes you a smarter trader.":"Great diversification! Now focus on timing — check the daily news before each trade."}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Ask Toby — kid-safe AI money coach (Toybox Plus) */}
+            {moreView==="Coach"&&(
+              <div>
+                <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.16),rgba(124,58,237,.08))",border:"1px solid rgba(245,158,11,.3)",borderRadius:"var(--rl)",padding:18,textAlign:"center",marginBottom:16}}>
+                  <div style={{fontSize:40,marginBottom:6}}>🦊</div>
+                  <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",marginBottom:6}}>Ask Toby!</div>
+                  <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.72)",lineHeight:1.6}}>Your very own money coach. Ask me anything about saving, coins, or your investments — I'll help in easy words! 💛</div>
+                </div>
+                {!isPremium?(
+                  <div style={{background:"linear-gradient(135deg,rgba(124,58,237,.16),rgba(245,158,11,.08))",border:"1px solid rgba(124,58,237,.35)",borderRadius:16,padding:20,textAlign:"center"}}>
+                    <div style={{fontSize:34,marginBottom:8}}>⭐</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:8}}>Toby is a Toybox Plus buddy</div>
+                    <div style={{fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,.65)",lineHeight:1.6,marginBottom:16}}>Unlock Toybox Plus and Toby will coach you every day — answering your money questions and cheering you on! 🦊</div>
+                    <button onClick={()=>{setShowPlus(true);setAskedPlus(false);}} style={{padding:"12px 24px",borderRadius:13,border:"none",background:"linear-gradient(135deg,#7c3aed,#a855f7)",color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer"}}>Meet Toby with Plus ⭐</button>
+                  </div>
+                ):(<>
+                  <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
+                    {coachMsgs.length===0&&(
+                      <div style={{background:"rgba(255,255,255,.05)",borderRadius:14,padding:14,fontSize:13,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.6}}>
+                        🦊 Hi {user?.name}! I'm Toby, your money coach. Tap a question below or type your own!
+                      </div>
+                    )}
+                    {coachMsgs.map((m,i)=>(
+                      <div key={i} style={{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"85%",background:m.role==="user"?"linear-gradient(135deg,#10b981,#059669)":"rgba(255,255,255,.08)",border:m.role==="user"?"none":"1px solid rgba(245,158,11,.25)",borderRadius:16,padding:"11px 14px",fontSize:13.5,fontWeight:600,color:"#fff",lineHeight:1.55}}>
+                        {m.role==="assistant"&&<span style={{marginRight:5}}>🦊</span>}{m.content}
+                      </div>
+                    ))}
+                    {coachBusy&&<div style={{alignSelf:"flex-start",fontSize:12,fontWeight:700,color:"rgba(255,255,255,.5)",padding:"4px 8px"}}>🦊 Toby is thinking…</div>}
+                  </div>
+                  {coachMsgs.length===0&&(
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>
+                      {["What should I save for?","Why do stocks go up and down?","Teach me something new!","How do I make my coins grow?"].map(q=>(
+                        <button key={q} onClick={()=>sendCoach(q)} style={{padding:"9px 13px",borderRadius:100,border:"1px solid rgba(245,158,11,.3)",background:"rgba(245,158,11,.1)",color:"#fde68a",fontSize:12,fontWeight:800,cursor:"pointer"}}>{q}</button>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+                    <textarea value={coachInput} onChange={e=>setCoachInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendCoach();}}} maxLength={300} placeholder="Ask Toby a money question…" rows={1} style={{flex:1,padding:"12px 13px",borderRadius:14,border:"1.5px solid rgba(255,255,255,.18)",background:"rgba(255,255,255,.06)",color:"#fff",fontFamily:"var(--fb)",fontSize:14,fontWeight:600,resize:"none",outline:"none",boxSizing:"border-box",lineHeight:1.4}}/>
+                    <button onClick={()=>sendCoach()} disabled={!coachInput.trim()||coachBusy} style={{flexShrink:0,width:48,height:48,borderRadius:14,border:"none",background:(!coachInput.trim()||coachBusy)?"rgba(255,255,255,.1)":"linear-gradient(135deg,#f59e0b,#f97316)",color:"#fff",fontSize:20,cursor:(!coachInput.trim()||coachBusy)?"default":"pointer"}}>➤</button>
+                  </div>
+                  <div style={{fontSize:10.5,fontWeight:600,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:10,lineHeight:1.5}}>🦊 Toby only talks about money &amp; your game. Never share your real name, address or passwords.</div>
+                </>)}
               </div>
             )}
 
