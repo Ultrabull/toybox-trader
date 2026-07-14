@@ -28,8 +28,8 @@ export default function Landing({ onStart }: { onStart: () => void }) {
       <div style={{ ...section, paddingTop: "calc(46px + env(safe-area-inset-top,0px))", textAlign: "center" }}>
         <div style={{ fontSize: 72, marginBottom: 4, filter: "drop-shadow(0 8px 24px rgba(124,58,237,.5))" }}>🧸</div>
         <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: 15, color: "rgba(255,255,255,.55)", letterSpacing: ".5px", marginBottom: 14 }}>Toybox Trader</div>
-        <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: 34, lineHeight: 1.15, marginBottom: 12 }}>Raise a<br /><span style={{ background: `linear-gradient(120deg,${GOLD},${PINK})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>money-smart kid</span> 🌱</div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,.72)", lineHeight: 1.6, maxWidth: 440, margin: "0 auto 22px" }}>The playful app where kids <strong style={{ color: "#fff" }}>earn, save &amp; invest</strong> and learn about real money — safely. Screen time you'll actually feel good about.</div>
+        <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: 33, lineHeight: 1.15, marginBottom: 12 }}>Give your kid a<br /><span style={{ background: `linear-gradient(120deg,${GOLD},${PINK})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>money-smart brain</span> 🧠</div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,.72)", lineHeight: 1.6, maxWidth: 448, margin: "0 auto 22px" }}>A guided <strong style={{ color: "#fff" }}>money course</strong>, a personal <strong style={{ color: "#fff" }}>tutor</strong>, and a <strong style={{ color: "#fff" }}>weekly note</strong> showing what they learned — while kids earn, save &amp; invest with play money. Screen time that actually makes them smarter.</div>
         <CTA />
         <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.45)", marginTop: 10 }}>Free to start · No credit card needed</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 22 }}>
@@ -37,14 +37,21 @@ export default function Landing({ onStart }: { onStart: () => void }) {
         </div>
       </div>
 
+      {/* THE DIFFERENCE */}
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "8px 20px 12px" }}>
+        <Card style={{ textAlign: "center", background: "linear-gradient(135deg,rgba(245,158,11,.12),rgba(236,72,153,.06))", border: "1px solid rgba(245,158,11,.28)" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", lineHeight: 1.55 }}>Other apps hand your kid a <span style={{ color: "rgba(255,255,255,.55)" }}>debit card</span >.<br />Toybox builds the <span style={{ color: GOLD }}>brain to use it well</span>.</div>
+        </Card>
+      </div>
+
       {/* HOW IT WORKS */}
       <div style={section}>
         <H>How it works</H>
-        <Sub>Three simple steps that turn screen time into real money skills.</Sub>
+        <Sub>A real money education, disguised as a game they love.</Sub>
         {[
-          { n: 1, icon: "🎮", c: P, t: "Play & learn", d: "Kids trade real companies — Apple, Roblox, Bitcoin — with pretend money, and complete fun bite-size money lessons." },
-          { n: 2, icon: "✅", c: GREEN, t: "Earn by doing", d: "You assign chores, homework or kindness tasks. Kids complete them and earn coins — or real allowance you track (never moved)." },
-          { n: 3, icon: "🏦", c: GOLD, t: "Save & grow", d: "Kids turn earnings into savings goals and investments, and watch their money grow. Real habits, zero risk." },
+          { n: 1, icon: "📚", c: P, t: "They learn", d: "A guided course takes kids from allowance and saving all the way to real investing — one fun, bite-size level at a time." },
+          { n: 2, icon: "🎮", c: GREEN, t: "They practice", d: "Kids put it to work trading real companies — Apple, Roblox, Bitcoin — with play money. All the learning, zero risk." },
+          { n: 3, icon: "📈", c: GOLD, t: "You see it stick", d: "Every Sunday, a note shows you what your kid learned that week — plus a question to ask them at dinner. Proof it's working." },
         ].map((s) => (
           <Card key={s.n} style={{ marginBottom: 12, display: "flex", gap: 14, alignItems: "flex-start" }}>
             <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, background: `${s.c}22`, border: `1px solid ${s.c}55`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{s.icon}</div>
@@ -55,18 +62,18 @@ export default function Landing({ onStart }: { onStart: () => void }) {
 
       {/* WHAT'S INSIDE */}
       <div style={section}>
-        <H>Everything in the toybox</H>
-        <Sub>One app that grows with your family.</Sub>
+        <H>What builds the brain</H>
+        <Sub>A whole money education in one app — plus the family tools around it.</Sub>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           {[
-            ["📈", "Real market prices", "Live stock & crypto prices — with play money"],
-            ["📚", "Money lessons", "Fun lessons + a Junior Investor certificate"],
-            ["✅", "Chores & rewards", "Assign tasks, kids earn coins or allowance"],
+            ["📚", "A real course", "4 levels: allowance → saving → real investing"],
+            ["🦊", "Toby, AI tutor", "A personal money coach your kid can ask anything"],
+            ["📈", "Weekly Parent Insight", "What they learned + a question to ask you"],
+            ["🎓", "Junior Investor Certificate", "A real credential when they finish the course"],
+            ["📊", "Real market practice", "Trade real companies with play money, zero risk"],
+            ["👨‍👩‍👧", "All your kids", "Each with their own profile and progress"],
+            ["✅", "Chores & allowance", "Assign tasks; track allowance (never moved)"],
             ["🏦", "Savings + match", "Goals with a parent match, like a 401(k)"],
-            ["👨‍👩‍👧", "Family accounts", "All your kids, each with their own profile"],
-            ["👵", "Grandparents", "Family circle can cheer & send gifts"],
-            ["💛", "Together Time", "Kids ask for time & teaching, not just stuff"],
-            ["🎨", "Fun & rewards", "Themes, avatars, streaks and daily bonuses"],
           ].map(([i, t, d]) => (
             <Card key={t as string} style={{ padding: 14 }}>
               <div style={{ fontSize: 26, marginBottom: 6 }}>{i}</div>
@@ -82,10 +89,10 @@ export default function Landing({ onStart }: { onStart: () => void }) {
         <H>Why parents love it 💜</H>
         <Card style={{ background: "linear-gradient(135deg,rgba(124,58,237,.14),rgba(236,72,153,.06))", border: "1px solid rgba(124,58,237,.3)" }}>
           {[
-            "Screen time that builds real life skills",
-            "Teaches the whole money cycle: earn → save → invest",
-            "Brings the family closer, not glued to a screen alone",
-            "Cheaper than the debit-card apps — and no card needed",
+            "It actually teaches — a real course, not a random game",
+            "You SEE it working: a weekly note on what your kid learned",
+            "A patient tutor answers the money questions you can't",
+            "Builds lifelong money habits — earn, save, invest — zero risk",
             "100% safe: no ads, no strangers, no real money moved",
           ].map((t) => (
             <div key={t} style={{ display: "flex", gap: 10, padding: "8px 0", fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,.88)", lineHeight: 1.5 }}><span style={{ color: GREEN, flexShrink: 0, fontSize: 16 }}>✓</span>{t}</div>
@@ -95,20 +102,27 @@ export default function Landing({ onStart }: { onStart: () => void }) {
 
       {/* PRICING */}
       <div style={section}>
-        <H>Start free. Upgrade if you love it.</H>
-        <Sub>The core game is free forever. Toybox Plus unlocks the whole family experience.</Sub>
+        <H>Less than a coffee a month</H>
+        <Sub>Start free with the first half of the course. Upgrade when you see it working.</Sub>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <Card>
             <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: 18, marginBottom: 4 }}>Free <span style={{ fontSize: 13, color: "rgba(255,255,255,.5)" }}>· forever</span></div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,.65)", lineHeight: 1.6 }}>The trading game, money lessons, 1 kid account, and basic chores &amp; rewards.</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,.65)", lineHeight: 1.6 }}>The first 2 course levels, the trading game, and basic chores — for 1 kid. A real taste, free forever.</div>
           </Card>
           <Card style={{ border: `2px solid ${P}`, background: "linear-gradient(135deg,rgba(124,58,237,.18),rgba(245,158,11,.06))" }}>
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
               <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: 18 }}>⭐ Toybox Plus</div>
               <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: 16, color: "#fff" }}>$29.99<span style={{ fontSize: 11, color: "rgba(255,255,255,.5)" }}>/yr</span></div>
             </div>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,.7)", lineHeight: 1.6, marginBottom: 6 }}>All your kids · full allowance &amp; savings match · family gifts · weekly reports · certificate · all themes.</div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: "#c4b5fd" }}>or $4.99/month — cancel anytime. Save 50% with yearly.</div>
+            {[
+              "📚 The full course — all 4 levels + certificate",
+              "🦊 Toby — your kid's personal AI money tutor",
+              "📈 Weekly Parent Insight — proof of what they learned",
+              "👨‍👩‍👧 All your kids + allowance, savings match & family tools",
+            ].map((t) => (
+              <div key={t} style={{ display: "flex", gap: 8, padding: "3px 0", fontSize: 12.5, fontWeight: 700, color: "rgba(255,255,255,.85)", lineHeight: 1.5 }}><span style={{ color: GREEN, flexShrink: 0 }}>✓</span>{t}</div>
+            ))}
+            <div style={{ fontSize: 11, fontWeight: 800, color: "#c4b5fd", marginTop: 8 }}>or $4.99/month — cancel anytime. Save 50% with yearly.</div>
           </Card>
         </div>
       </div>
@@ -126,10 +140,11 @@ export default function Landing({ onStart }: { onStart: () => void }) {
       <div style={section}>
         <H>Questions?</H>
         {[
+          ["Will it actually teach my kid?", "Yes — it's a structured course from allowance to investing, with a personal tutor and a weekly note showing you what stuck. The first half is free, so you can see for yourself."],
+          ["What do I get with Toybox Plus?", "The full 4-level course + certificate, Toby (your kid's AI tutor), the weekly Parent Insight, all your kids, and the family tools like allowance and savings match."],
           ["Is it really safe for kids?", "Yes — no ads, no strangers, no chat, and no real money. It's parent-controlled and private to your family."],
           ["Does the app move real money?", "Never. Allowance is only tracked as a friendly note — you pay your child directly, however you like."],
           ["What ages is it for?", "Built for kids roughly 8–17, and grows with them from first chores to real investing concepts."],
-          ["Do I need a credit card?", "No. Start completely free — upgrade only if you love it."],
         ].map(([q, a]) => (
           <Card key={q} style={{ marginBottom: 10 }}>
             <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: 14, marginBottom: 4 }}>{q}</div>
@@ -142,7 +157,7 @@ export default function Landing({ onStart }: { onStart: () => void }) {
       <div style={{ ...section, textAlign: "center", paddingBottom: 20 }}>
         <div style={{ fontSize: 54, marginBottom: 8 }}>🧸📈</div>
         <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: 26, marginBottom: 8 }}>Ready to start?</div>
-        <Sub>Give your kids a head start on money — free, safe, and fun.</Sub>
+        <Sub>Build your kid a money-smart brain — free to start, safe, and actually fun.</Sub>
         <div style={{ display: "flex", justifyContent: "center" }}><CTA label="Start Free Today 🚀" big /></div>
       </div>
 

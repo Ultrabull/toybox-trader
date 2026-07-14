@@ -232,19 +232,16 @@ export function mountSyncUI() {
           return;
         }
         const feats = [
-          "👨‍👩‍👧‍👦 Add ALL your kids (free = 1)",
-          "✅ Chores, tasks &amp; custom reward store",
-          "💵 Pocket-money allowance (tracked, never moved)",
-          "🏦 Savings goals with your Parent Match",
-          "💰 Auto-allowance — set &amp; forget",
-          "👵 Family Circle — gifts from grandparents",
-          "📈 Weekly Family Money Report",
-          "🎓 Junior Investor Certificate",
-          "🎨 All themes &amp; avatars",
-        ].map((f) => `<div style="font-size:12.5px;font-weight:700;color:rgba(255,255,255,.88);padding:3px 0;display:flex;gap:7px"><span style="color:#86efac">✓</span><span>${f}</span></div>`).join("");
+          "📚 The full money course — all 4 levels, allowance to real investing",
+          "📈 Weekly Parent Insight — what your kid learned + a question to ask them",
+          "🦊 Toby — your kid&rsquo;s own AI money tutor (answers their questions)",
+          "🎓 Junior Investor Certificate when they finish the course",
+          "👨‍👩‍👧‍👦 All your kids on one plan (free = 1 kid)",
+          "➕ Everyday tools: allowance, savings match, chores &amp; family gifts",
+        ].map((f) => `<div style="font-size:12.5px;font-weight:700;color:rgba(255,255,255,.88);padding:4px 0;display:flex;gap:7px"><span style="color:#86efac">✓</span><span>${f}</span></div>`).join("");
         plusBody.innerHTML = `
-          <div style="font-family:'Fredoka One',cursive;font-size:15px;color:#fff;margin:2px 0 4px">Raise a money-smart kid 🌱</div>
-          <p class="muted" style="margin-bottom:11px">Everything the big kids-money apps teach — <strong style="color:#fff">earn, save &amp; invest</strong> — without the $15/mo debit-card fees. One price, your whole family.</p>
+          <div style="font-family:'Fredoka One',cursive;font-size:16px;color:#fff;margin:2px 0 4px">Build your kid a money-smart brain 🧠</div>
+          <p class="muted" style="margin-bottom:11px">Other apps hand kids a debit card. Toybox builds the <strong style="color:#fff">brain to use it well</strong> — a full course, a personal tutor, and a weekly note showing you it&rsquo;s working. Less than a coffee a month.</p>
           <div style="background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.25);border-radius:13px;padding:12px 13px;margin-bottom:12px">${feats}</div>
           <div style="display:flex;gap:8px;margin-bottom:11px">
             <div style="flex:1;border:2px solid #7c3aed;border-radius:13px;padding:11px 8px;text-align:center;background:rgba(124,58,237,.16);position:relative">
