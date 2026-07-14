@@ -528,6 +528,8 @@ const CSS = `
 :root{--fd:'Fredoka One',cursive;--fb:'Nunito',sans-serif;--r:14px;--rl:22px}
 body{font-family:var(--fb);overflow:hidden}
 body[data-flow="auth-mid"] #tbx-sync-btn,body[data-flow="auth-mid"] #tbx-push-btn{display:none!important}
+body[data-kid="1"] #tbx-sync-btn,body[data-kid="1"] #tbx-push-btn{display:none!important}
+@keyframes fabIn{from{opacity:0;transform:translateY(10px) scale(.9)}to{opacity:1;transform:none}}
 .app{height:100vh;height:100dvh;width:100vw;overflow:hidden;position:relative}
 
 /* Stars */
@@ -1207,6 +1209,9 @@ function KidDash({user,savedState,onLogout}){
   const [coachMsgs,   setCoachMsgs]   = useState([]);                            // "Ask Toby" AI coach chat: {role:"user"|"assistant",content}
   const [coachInput,  setCoachInput]  = useState("");
   const [coachBusy,   setCoachBusy]   = useState(false);
+  const [fabOpen,     setFabOpen]     = useState(false);                          // floating helper widget (Toby/sync/reminders/report)
+  // On kid screens, hide the standalone ☁️/🔔 buttons — they live inside the widget now.
+  useEffect(()=>{ document.body.dataset.kid="1"; return ()=>{ delete document.body.dataset.kid; }; },[]);
   const [bugState,    setBugState]    = useState("idle");                        // idle | sending | done | error
   const [owned,       setOwned]       = useState(S.owned || []);                 // shop items owned
   const [equipAvatar, setEquipAvatar] = useState(S.equipAvatar || null);         // equipped avatar emoji (overrides default)
@@ -3268,12 +3273,26 @@ function KidDash({user,savedState,onLogout}){
         ))}
       </nav>
 
-      {/* Floating "report a problem" ladybug — stacks above the ☁️/🔔 buttons.
-          Opens the kid-friendly Get Help form. Hidden during the first-run tour. */}
-      {tourDone&&(
-        <button onClick={()=>{setBugState("idle");setMoreView("Help");setNav("More");}} title="Report a problem" aria-label="Report a problem"
-          style={{position:"fixed",bottom:"calc(180px + env(safe-area-inset-bottom,0px))",right:14,zIndex:2147483000,width:44,height:44,borderRadius:"50%",border:"none",cursor:"pointer",background:"rgba(20,16,40,.72)",color:"#fff",fontSize:22,lineHeight:"44px",boxShadow:"0 4px 16px rgba(0,0,0,.4)",backdropFilter:"blur(6px)",opacity:.9,padding:0}}>🐞</button>
-      )}
+      {/* Floating helper widget — one button that expands to Toby, sync, reminders
+          and report-a-problem. Replaces the separate ☁️/🔔/🐞 buttons (those are
+          hidden on kid screens via body[data-kid]). Hidden during the first-run tour. */}
+      {tourDone&&(<>
+        {fabOpen&&<div onClick={()=>setFabOpen(false)} style={{position:"fixed",inset:0,zIndex:2147482999}}/>}
+        <div style={{position:"fixed",bottom:"calc(76px + env(safe-area-inset-bottom,0px))",right:14,zIndex:2147483000,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10}}>
+          {fabOpen&&[
+            {ic:"🦊",label:"Ask Toby",plus:!isPremium,bg:"linear-gradient(135deg,#f59e0b,#f97316)",on:()=>{setMoreView("Coach");setNav("More");}},
+            {ic:"🐞",label:"Report a problem",bg:"rgba(24,18,48,.95)",on:()=>{setBugState("idle");setMoreView("Help");setNav("More");}},
+            {ic:"🔔",label:"Reminders",bg:"rgba(24,18,48,.95)",on:()=>{document.getElementById("tbx-push-btn")?.click();}},
+            {ic:"☁️",label:"Family sync",bg:"rgba(24,18,48,.95)",on:()=>{document.getElementById("tbx-sync-btn")?.click();}},
+          ].map((it,idx)=>(
+            <button key={it.label} onClick={()=>{it.on();setFabOpen(false);}} style={{display:"flex",alignItems:"center",gap:9,border:"none",background:"transparent",cursor:"pointer",padding:0,animation:`fabIn .2s ease ${idx*0.035}s both`}}>
+              <span style={{fontSize:12,fontWeight:800,color:"#fff",background:"rgba(24,18,48,.88)",padding:"6px 11px",borderRadius:100,boxShadow:"0 2px 10px rgba(0,0,0,.45)",whiteSpace:"nowrap",backdropFilter:"blur(6px)",display:"inline-flex",alignItems:"center"}}>{it.label}{it.plus&&<span style={{marginLeft:6,fontSize:8.5,fontWeight:800,background:"rgba(124,58,237,.55)",color:"#e9d5ff",padding:"1px 6px",borderRadius:100}}>PLUS</span>}</span>
+              <span style={{width:46,height:46,borderRadius:"50%",background:it.bg,color:"#fff",fontSize:21,lineHeight:"46px",textAlign:"center",boxShadow:"0 4px 14px rgba(0,0,0,.45)",flexShrink:0}}>{it.ic}</span>
+            </button>
+          ))}
+          <button onClick={()=>setFabOpen(o=>!o)} aria-label="Helpers" title="Helpers" style={{width:54,height:54,borderRadius:"50%",border:"none",cursor:"pointer",background:fabOpen?"rgba(24,18,48,.96)":"linear-gradient(135deg,#7c3aed,#a855f7)",color:"#fff",fontSize:fabOpen?20:24,lineHeight:"54px",textAlign:"center",boxShadow:"0 6px 20px rgba(124,58,237,.5)",transition:"transform .2s",transform:fabOpen?"rotate(90deg)":"none",padding:0}}>{fabOpen?"✕":"✨"}</button>
+        </div>
+      </>)}
 
       {/* More drawer */}
       {moreOpen&&(
