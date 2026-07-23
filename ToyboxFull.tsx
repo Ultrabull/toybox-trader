@@ -1720,6 +1720,7 @@ function KidDash({user,savedState,onLogout}){
   const curTax   = jobTax(curJob);
   const curBills = jobBills(curJob);
   const curSave  = jobSave(curJob);                      // paycheck minus tax & bills = what you can invest
+  const emGoal   = curBills * 6;                         // a full emergency fund ≈ 3 months of bills
   // Paydays come on a real every-2-weeks rhythm (the first one is ready now).
   const payReady = !career.awaitingInvest && (!career.lastPayday || daysSince(career.lastPayday) >= PAY_DAYS);
   const payInDays= Math.max(0, PAY_DAYS - daysSince(career.lastPayday));
@@ -1759,9 +1760,11 @@ function KidDash({user,savedState,onLogout}){
   // future surprises. Doesn't grow like investing, but keeps curveballs from
   // hurting. A real trade-off: safety now vs. growth later.
   const addEmergency = (amtWanted) => {
-    const amt=Math.min(Math.max(1,Math.round(amtWanted||0)), Math.floor(cash));
+    const room = Math.max(0, emGoal - (career.emergency||0));   // don't grow past ~3 months of bills
+    if(room < 1){ setTaskCelebrate({emoji:"🛟",title:"Emergency fund is full! 🎉",label:`You've saved about 3 months of bills (${fs$(emGoal)}) — a strong safety net. Put the rest into investing to grow it! 🌱`}); return; }
+    const amt=Math.min(Math.max(1,Math.round(amtWanted||0)), Math.floor(cash), room);
     if(amt<1){ setTaskCelebrate({emoji:"💸",title:"No cash to set aside",label:"Collect a paycheck first, then move a little into your emergency fund."}); return; }
-    setCash(c=>c-amt); setCareer(cur=>({...cur, emergency:(cur.emergency||0)+amt})); setCoins(c=>c+3); fx("coin",12);
+    setCash(c=>c-amt); setCareer(cur=>({...cur, emergency:(cur.emergency||0)+amt})); fx("coin",12);
   };
 
   // 2) Invest your savings into the chosen ETF. Any amount > 0 handles this
@@ -3559,18 +3562,29 @@ function KidDash({user,savedState,onLogout}){
 
                 {/* ── EMERGENCY FUND — a safety net for surprises ── */}
                 <div style={{fontSize:13,fontWeight:800,color:"#fcd34d",marginBottom:9}}>🛟 Emergency fund</div>
+                {(()=>{
+                  const emNow=career.emergency||0; const full=emNow>=emGoal; const emPct=Math.min(100,Math.round(emNow/emGoal*100));
+                  return(
                 <div style={{background:"rgba(252,211,77,.08)",border:"1px solid rgba(252,211,77,.28)",borderRadius:16,padding:15,marginBottom:16}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
                     <div style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,flex:1,paddingRight:10}}>Set a little aside for surprises. It doesn't grow like investing — but it covers curveballs so they don't hurt your savings.</div>
-                    <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)"}}>SAVED UP</div><div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fcd34d"}}>{fs$(career.emergency||0)}</div></div>
+                    <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)"}}>SAVED UP</div><div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fcd34d"}}>{fs$(emNow)}</div><div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.35)"}}>goal {fs$(emGoal)}</div></div>
                   </div>
-                  <div style={{display:"flex",gap:8}}>
-                    {[10,25].map(a=>(
-                      <button key={a} onClick={()=>addEmergency(a)} disabled={availCash<a} style={{flex:1,padding:"10px",borderRadius:11,border:`1.5px solid ${availCash<a?"rgba(255,255,255,.1)":"rgba(252,211,77,.4)"}`,background:availCash<a?"transparent":"rgba(252,211,77,.12)",color:availCash<a?"rgba(255,255,255,.3)":"#fcd34d",fontFamily:"var(--fd)",fontSize:14,cursor:availCash<a?"not-allowed":"pointer"}}>+ {fs$(a)}</button>
-                    ))}
-                  </div>
-                  <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:8}}>Grown-ups aim for a few months of bills saved. Every bit helps! 💛</div>
+                  {/* progress toward ~3 months of bills */}
+                  <div style={{height:7,background:"rgba(255,255,255,.1)",borderRadius:100,overflow:"hidden",marginBottom:11}}><div style={{height:"100%",width:`${emPct}%`,background:full?"#86efac":"#fcd34d",borderRadius:100,transition:"width .4s ease"}}/></div>
+                  {full?(
+                    <div style={{textAlign:"center",padding:"9px",borderRadius:11,background:"rgba(16,185,129,.12)",border:"1px solid rgba(16,185,129,.3)",fontSize:12,fontWeight:800,color:"#86efac"}}>✅ Fully funded! You're covered for ~3 months 🎉</div>
+                  ):(
+                    <div style={{display:"flex",gap:8}}>
+                      {[10,25].map(a=>{const dis=availCash<a; return(
+                        <button key={a} onClick={()=>addEmergency(a)} disabled={dis} style={{flex:1,padding:"10px",borderRadius:11,border:`1.5px solid ${dis?"rgba(255,255,255,.1)":"rgba(252,211,77,.4)"}`,background:dis?"transparent":"rgba(252,211,77,.12)",color:dis?"rgba(255,255,255,.3)":"#fcd34d",fontFamily:"var(--fd)",fontSize:14,cursor:dis?"not-allowed":"pointer"}}>+ ${a}</button>
+                      );})}
+                    </div>
+                  )}
+                  <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:8}}>{full?"Nice — now put spare cash into investing to grow it! 🌱":"Grown-ups aim for ~3 months of bills saved. Every bit helps! 💛"}</div>
                 </div>
+                  );
+                })()}
 
                 {/* ── PROMOTION TRACKER ── */}
                 {nextJob?(
