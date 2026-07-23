@@ -2377,7 +2377,7 @@ function KidDash({user,savedState,onLogout}){
   ];
 
   return(
-    <div className="dash">
+    <div className="dash" style={{background:theme.bg,transition:"background .4s ease"}}>
       {/* Order placed / filled toast */}
       {orderToast&&(
         <div style={{position:"fixed",top:0,left:0,right:0,zIndex:320,padding:"12px 16px",background:(orderToast.type==="filled"||orderToast.type==="backfill"||(orderToast.type==="pred"&&orderToast.wins>0))?"rgba(4,120,87,.96)":orderToast.type==="insufficient"?"rgba(180,83,9,.96)":"rgba(124,58,237,.96)",color:"#fff",animation:"slideDown .4s ease",display:"flex",alignItems:"center",gap:10}} onClick={()=>setOrderToast(null)}>
@@ -3018,8 +3018,8 @@ function KidDash({user,savedState,onLogout}){
                   const isOwned=owned.includes(item.id);
                   const canAfford=coins>=item.cost;
                   const isEquippable = item.type==="avatar"||item.type==="theme";
-                  const themeIdMap={theme_neon:"neon",theme_ocean:"ocean"};
-                  const isActive = (item.type==="avatar"&&equipAvatar===item.icon) || (item.type==="theme"&&equipTheme===themeIdMap[item.id]);
+                  const themeTid = item.type==="theme" ? item.id.replace("theme_","") : null;
+                  const isActive = (item.type==="avatar"&&equipAvatar===item.icon) || (item.type==="theme"&&(equipTheme||user?.theme)===themeTid);
                   return(
                     <div key={item.id} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",background:"rgba(255,255,255,.06)",border:`1px solid ${isActive?"rgba(16,185,129,.4)":"rgba(255,255,255,.1)"}`,borderRadius:14,marginBottom:9,opacity:isOwned&&!isEquippable?.7:1}}>
                       <span style={{fontSize:30,flexShrink:0}}>{item.icon}</span>
