@@ -422,8 +422,9 @@ const BILL_ICON = {Home:"🏠",Food:"🍎",Phone:"📱",Other:"🚌"};
 const jobTax   = (j) => Math.round(j.pay * (j.tax||0));               // tax taken out first
 const jobBills = (j) => Object.values(j.bills).reduce((a,b)=>a+b,0);   // total bills
 const jobSave  = (j) => j.pay - jobTax(j) - jobBills(j);              // left to invest each payday
-// Promotions get HARDER as you climb: 2 for the first rungs, then 3, 4, 5…
-const promoNeed = (idx) => Math.min(5, 2 + Math.floor(idx/3));
+// A promotion takes 2 invested paychecks. With paydays every 2 weeks, that's
+// about 1 month per upgrade — a steady, not-too-fast climb up the ladder.
+const promoNeed = () => 2;
 const PAY_DAYS = 14;   // a fresh paycheck is ready every 2 weeks
 // Surprise life events — a random one may hit on payday, eating into savings.
 // This teaches WHY you keep an emergency fund: life throws curveballs!
