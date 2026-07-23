@@ -828,15 +828,15 @@ export default function ToyboxApp() {
   };
 
   // Parent resets a kid's progress (or removes account entirely)
-  const onResetKid = async (kidId, mode) => {
+  const onResetKid = async (kidId, mode, gain=0) => {
     if(mode==="money"){
-      // Reset TRADING only to a clean, modest +$80 all-time gain (Money Garden
-      // = $1,080). Clears holdings & trades but KEEPS lessons, badges and coins —
-      // corrects bad play-money profit without erasing learning.
+      // Reset TRADING only — Money Garden becomes $1,000 + the chosen starting
+      // gain (0 = fresh start). Clears holdings & trades but KEEPS lessons, badges
+      // and coins — corrects bad play-money profit without erasing learning.
       try{
         const st=await loadData(stateKey(kidId));
         if(st){
-          const base=1080;
+          const base=1000+Math.max(0,Number(gain)||0);
           await saveData(stateKey(kidId),{...st,cash:base,portfolio:[],trades:[],pendingOrders:[],lastValue:base});
         }
       }catch(e){}
@@ -3841,6 +3841,7 @@ function KidDash({user,savedState,onLogout}){
 function ParentDash({kids,onResetKid,onLogout}){
   const [kidStates,setKidStates]=useState({});
   const [confirmReset,setConfirmReset]=useState(null);  // {kid, mode}
+  const [resetGain,setResetGain]=useState(0);           // starting gain to leave after a money reset ($)
   const [pv,setPv]=useState("perf");                    // perf | tasks
   const [tasks,setTasks]=useState([]);
   const [store,setStore]=useState([]);
@@ -4016,7 +4017,7 @@ function ParentDash({kids,onResetKid,onLogout}){
                       ))}
                       {/* Parent controls */}
                       <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.08)",display:"flex",gap:8}}>
-                        <button onClick={()=>setConfirmReset({kid:k,mode:"money"})} style={{flex:1,padding:"9px 4px",borderRadius:10,border:"1px solid rgba(16,185,129,.35)",background:"rgba(16,185,129,.12)",color:"#86efac",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer",lineHeight:1.25}}>💵 Reset money</button>
+                        <button onClick={()=>{setResetGain(0);setConfirmReset({kid:k,mode:"money"});}} style={{flex:1,padding:"9px 4px",borderRadius:10,border:"1px solid rgba(16,185,129,.35)",background:"rgba(16,185,129,.12)",color:"#86efac",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer",lineHeight:1.25}}>💵 Reset money</button>
                         <button onClick={()=>setConfirmReset({kid:k,mode:"reset"})} style={{flex:1,padding:"9px 4px",borderRadius:10,border:"1px solid rgba(245,158,11,.3)",background:"rgba(245,158,11,.1)",color:"#fde68a",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer",lineHeight:1.25}}>🔄 Reset all</button>
                         <button onClick={()=>setConfirmReset({kid:k,mode:"remove"})} style={{flex:1,padding:"9px 4px",borderRadius:10,border:"1px solid rgba(239,68,68,.3)",background:"rgba(239,68,68,.1)",color:"#fca5a5",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer",lineHeight:1.25}}>🗑️ Remove</button>
                       </div>
@@ -4395,12 +4396,22 @@ function ParentDash({kids,onResetKid,onLogout}){
               {confirmReset.mode==="remove"
                 ?<>This deletes the account and all progress from this device. They'll need to create a new account (or restore from a backup code).<br/><br/><strong style={{color:"#fca5a5"}}>This can't be undone</strong> unless you have a backup code.</>
                 :confirmReset.mode==="money"
-                ?<>Sets their Money Garden to a clean <strong style={{color:"#86efac"}}>+$80 gain ($1,080)</strong> and clears holdings & trades, but <strong style={{color:"#86efac"}}>keeps their lessons, badges and coins</strong>. Use this to fix bad play-money profit. 👍</>
+                ?<>Clears holdings & trades and sets their Money Garden to <strong style={{color:"#86efac"}}>${(1000+resetGain).toLocaleString()}</strong>{resetGain>0?<> (a <strong style={{color:"#86efac"}}>+${resetGain}</strong> head start 🌱)</>:<> (fresh start)</>}, but <strong style={{color:"#86efac"}}>keeps their lessons, badges and coins</strong>.</>
                 :<>This wipes their portfolio, lessons, badges and trades. They'll start fresh with $1,000. The account stays.<br/><br/><strong style={{color:"#fca5a5"}}>This can't be undone</strong> unless you have a backup code.</>}
             </div>
+            {confirmReset.mode==="money"&&(
+              <div style={{marginBottom:18}}>
+                <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.5)",textAlign:"center",marginBottom:8}}>GIVE THEM A STARTING GAIN?</div>
+                <div style={{display:"flex",gap:7,justifyContent:"center",flexWrap:"wrap"}}>
+                  {[0,80,250,500].map(g=>(
+                    <button key={g} onClick={()=>setResetGain(g)} style={{padding:"8px 13px",borderRadius:10,border:`1.5px solid ${resetGain===g?"rgba(16,185,129,.6)":"rgba(255,255,255,.15)"}`,background:resetGain===g?"rgba(16,185,129,.16)":"transparent",color:resetGain===g?"#86efac":"rgba(255,255,255,.6)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>{g===0?"Fresh start":`+$${g}`}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setConfirmReset(null)} style={{flex:1,padding:"13px",borderRadius:13,border:"1.5px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.7)",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>Cancel</button>
-              <button onClick={async()=>{const kid=confirmReset.kid;const mode=confirmReset.mode;setConfirmReset(null);await onResetKid(kid.id,mode);if(mode==="money"){const st=await loadData(stateKey(kid.id));setKidStates(s=>({...s,[kid.id]:st}));}else{setKidStates(s=>{const n={...s};delete n[kid.id];return n;});}}} style={{flex:1,padding:"13px",borderRadius:13,border:"none",background:confirmReset.mode==="money"?"linear-gradient(135deg,#10b981,#059669)":"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>{confirmReset.mode==="remove"?"Remove":confirmReset.mode==="money"?"Reset money":"Reset all"}</button>
+              <button onClick={async()=>{const kid=confirmReset.kid;const mode=confirmReset.mode;const gain=resetGain;setConfirmReset(null);await onResetKid(kid.id,mode,gain);if(mode==="money"){const st=await loadData(stateKey(kid.id));setKidStates(s=>({...s,[kid.id]:st}));}else{setKidStates(s=>{const n={...s};delete n[kid.id];return n;});}}} style={{flex:1,padding:"13px",borderRadius:13,border:"none",background:confirmReset.mode==="money"?"linear-gradient(135deg,#10b981,#059669)":"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>{confirmReset.mode==="remove"?"Remove":confirmReset.mode==="money"?"Reset money":"Reset all"}</button>
             </div>
           </div>
         </div>
