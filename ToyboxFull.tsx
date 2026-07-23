@@ -830,13 +830,13 @@ export default function ToyboxApp() {
   // Parent resets a kid's progress (or removes account entirely)
   const onResetKid = async (kidId, mode) => {
     if(mode==="money"){
-      // Reset TRADING only — clean cash, no holdings/trades — but KEEP lessons,
-      // badges, coins and streak. Corrects bad play-money profit without erasing learning.
+      // Reset TRADING only to a clean, modest +$80 all-time gain (Money Garden
+      // = $1,080). Clears holdings & trades but KEEPS lessons, badges and coins —
+      // corrects bad play-money profit without erasing learning.
       try{
         const st=await loadData(stateKey(kidId));
         if(st){
-          const lessonCash=(st.doneLesson||[]).reduce((s,id)=>s+(LESSONS.find(l=>l.id===id)?.cashReward||0),0);
-          const base=1000+lessonCash;
+          const base=1080;
           await saveData(stateKey(kidId),{...st,cash:base,portfolio:[],trades:[],pendingOrders:[],lastValue:base});
         }
       }catch(e){}
@@ -4395,7 +4395,7 @@ function ParentDash({kids,onResetKid,onLogout}){
               {confirmReset.mode==="remove"
                 ?<>This deletes the account and all progress from this device. They'll need to create a new account (or restore from a backup code).<br/><br/><strong style={{color:"#fca5a5"}}>This can't be undone</strong> unless you have a backup code.</>
                 :confirmReset.mode==="money"
-                ?<>Clears their play cash, holdings and trades back to a clean start, but <strong style={{color:"#86efac"}}>keeps their lessons, badges and coins</strong>. Use this to fix bad play-money profit. 👍</>
+                ?<>Sets their Money Garden to a clean <strong style={{color:"#86efac"}}>+$80 gain ($1,080)</strong> and clears holdings & trades, but <strong style={{color:"#86efac"}}>keeps their lessons, badges and coins</strong>. Use this to fix bad play-money profit. 👍</>
                 :<>This wipes their portfolio, lessons, badges and trades. They'll start fresh with $1,000. The account stays.<br/><br/><strong style={{color:"#fca5a5"}}>This can't be undone</strong> unless you have a backup code.</>}
             </div>
             <div style={{display:"flex",gap:10}}>
