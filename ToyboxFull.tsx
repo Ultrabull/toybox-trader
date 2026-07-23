@@ -402,6 +402,94 @@ const JOBS = [
 ];
 const PAY_DAYS = 14;   // a paycheck lands every 2 weeks
 
+// ─── Challenge Rounds: a harder "Round 2" for each finished lesson ──────────
+// These questions are tougher and deliberately CONNECT to earlier lessons, so
+// kids have to remember (and sometimes re-read) what came before to answer.
+// Passing pays the same cash again — extra money to invest — but you must
+// clear it with 3 hearts, no wrong answers survive, so it takes real thought.
+const LESSON_CHALLENGE = {
+  money_basics:[
+    {q:"Your friend says a $1 bill is valuable because it's made of something special. What's the REAL reason it's worth $1?",opts:["It's made of gold","Everyone AGREES it's worth $1, so you can swap it for things","The government mails you extra","It's shiny"],correct:1,why:"Money is a swap tool that only works because everyone agrees on its value — not what it's made of."},
+    {q:"You have $10, spend $7 on a toy and $3 on a snack. A friend asks to borrow $2. What's true?",opts:["Sure — I have plenty left","Sorry, I spent it all; it's gone until I earn more","I'll just make more appear","Money never runs out"],correct:1,why:"Once money is spent it's gone until you earn more. Money runs out — spend carefully!"},
+  ],
+  needs_wants:[
+    {q:"You have $12 (and remember — money runs out!). You need $8 for lunch this week, and a $10 toy is on sale. Smart move?",opts:["Buy the toy — it's on sale!","Cover the $8 lunch first, then see what's left","Borrow money for both","Spend all $12 on the toy"],correct:1,why:"Needs before wants. Lunch is a need, and since money runs out, cover it first — then enjoy wants with the rest."},
+    {q:"Which shopping list puts NEEDS first?",opts:["Game, candy, then food if there's money","Food and a warm coat first, then a game if money's left","Only toys","Candy for every meal"],correct:1,why:"Food and clothing are needs — they come before wants like games. That's smart budgeting!"},
+  ],
+  earning:[
+    {q:"You want a $40 game (a want) but have $0. Using what you know, the BEST plan is…",opts:["Wait for it to fall from the sky","Do chores/jobs to earn it, cover needs, then buy it","Take it from someone","Give up"],correct:1,why:"Money is earned by working. Earn it, cover your needs first, then buy your want."},
+    {q:"Two kids want to earn more as grown-ups. Who probably will?",opts:["The one who never learns anything","The one who reads and learns useful skills","The one who sleeps all day","Nobody — earning is random"],correct:1,why:"Learning = earning. More skills → bigger jobs → more pay. You'll see this in your paycheck jobs too!"},
+  ],
+  saving_basics:[
+    {q:"You earn $5 a week from chores and want a $40 Lego set. If you save it ALL, how long?",opts:["1 week","8 weeks","1 year","Never — saving doesn't work"],correct:1,why:"$40 ÷ $5 = 8 weeks. A little saved every week adds up to big things!"},
+    {q:"Why is saving toward a GOAL easier than saving with no goal?",opts:["It isn't — goals don't matter","You can picture the thing and watch your jar fill toward it","Goals make money vanish","Grown-ups just say so"],correct:1,why:"A goal makes saving fun — you're watching your savings climb toward something you love!"},
+  ],
+  investing:[
+    {q:"Saving $100 in a piggy bank keeps it $100. What can INVESTING that $100 do that saving can't?",opts:["Nothing different","Make your money grow by working for you","Make it vanish","Turn it into candy"],correct:1,why:"Saving keeps money safe but flat. Investing puts your money to WORK so it can grow — the big difference!"},
+    {q:"You invest $5 to own HALF a lemonade stand. It earns $30 Saturday. How much is yours?",opts:["$5","$15","$30","Nothing"],correct:1,why:"You own half, so half of $30 = $15. Your money worked while you did nothing!"},
+  ],
+  when_buy:[
+    {q:"You learned investing means owning a piece of a GOOD company. Its price drops 15% for no bad reason. A smart investor sees…",opts:["A disaster — sell everything","A SALE — a chance to own a good thing cheaper","A reason to panic","Nothing"],correct:1,why:"A temporary dip on a GOOD company is like a sale. Smart investors buy the discount!"},
+    {q:"You have $100 to invest. Which is safest?",opts:["All $100 in ONE company","Spread across 4–5 different companies","Under your pillow","All in the riskiest one"],correct:1,why:"Don't put all eggs in one basket! Spreading out (diversifying) protects you if one drops."},
+  ],
+  when_sell:[
+    {q:"You bought a stock on a dip (nice!). It's up +$30 on screen. When is that $30 REALLY yours?",opts:["Right now, it's on the screen","Only when you SELL and lock it in","When you tell friends","Never"],correct:1,why:"Profit is only real when you sell. Until then it's a number that can still drop."},
+    {q:"A good company you own drops 10% in a day. The smart move is…",opts:["Panic sell everything","Stay calm — good companies usually bounce back higher","Buy a lottery ticket","Delete the app"],correct:1,why:"Don't panic sell! Good companies have dropped many times and come back. Patience wins."},
+  ],
+  crypto:[
+    {q:"You have $1,000. What's the MOST you should put in crypto?",opts:["All $1,000","$100 (10%)","$800","$500"],correct:1,why:"The 10% rule! Never more than 10% in crypto — with $1,000 that's $100 max, no matter how excited you feel."},
+    {q:"Why can Bitcoin rocket up AND crash down so fast?",opts:["It's backed by gold","Its value is what people BELIEVE it's worth, and only 21M exist","The government sets it","It never changes"],correct:1,why:"Like rare trading cards, crypto's price runs on belief and scarcity — exciting, but risky!"},
+  ],
+  charts:[
+    {q:"A chart shows a stock zig-zagging UP over a year with lots of little dips. A patient investor sees the dips as…",opts:["Reasons to panic sell","Normal bumps on the way up — maybe even buying chances","Proof it's doomed","Boring"],correct:1,why:"Charts show ups AND downs. Little dips are normal — panic sellers lose, patient investors ride the trend."},
+    {q:"The best way to use a chart is to…",opts:["Guess the future perfectly","See the overall trend and stay calm through normal ups and downs","Panic at every red day","Ignore it"],correct:1,why:"Charts show trends, not guarantees. Use them to spot the big picture and stay calm!"},
+  ],
+  options:[
+    {q:"Options are powerful but risky. What's the golden rule before anything risky?",opts:["Bet everything","Never risk more than you can afford to lose","Borrow lots of money","Close your eyes and hope"],correct:1,why:"Options can multiply gains AND losses fast. Only ever risk a small amount you can afford to lose."},
+    {q:"An option lets you…",opts:["Own a company forever for free","Make a time-limited bet on where a price will go","Guarantee you never lose","Get free money"],correct:1,why:"Options are time-limited bets on price. They can pay big or expire worthless — that's why they're advanced!"},
+  ],
+  risk:[
+    {q:"Which portfolio is the LEAST risky?",opts:["100% in one crypto coin","Spread across 5 things, only ~10% in crypto","All in one meme stock","Everything in the hottest new thing"],correct:1,why:"Diversifying AND capping risky stuff like crypto at ~10% is how smart investors control risk."},
+    {q:"You feel SUPER excited about a risky coin. Using your rules, you…",opts:["Put everything in — excitement means safe","Stick to the plan: a small slice (~10%), stay diversified","Ignore all rules","Bet your lunch money too"],correct:1,why:"Excitement isn't a strategy! Rules like the 10% cap and diversifying protect you from your own hype."},
+  ],
+  psychology:[
+    {q:"Everyone online screams 'SELL, it's crashing!' You own good companies. A calm investor usually…",opts:["Panics and sells with the crowd","Stays calm — good companies have bounced back before","Buys 100% crypto","Deletes everything"],correct:1,why:"Fear spreads fast, but panic sellers usually lose. Staying calm through dips is a superpower!"},
+    {q:"'FOMO' (fear of missing out) makes people…",opts:["Buy carefully after research","Rush to buy something just because it's hot, often at the top","Save more","Stay patient"],correct:1,why:"FOMO makes people buy high in a panic. Knowing your feelings keeps you from costly mistakes."},
+  ],
+  dca:[
+    {q:"Dollar-cost averaging means investing the SAME amount on a regular schedule. Why is it smart?",opts:["You time the market perfectly","You buy more when it's cheap and less when it's pricey, stress-free","It guarantees profit","It isn't smart"],correct:1,why:"Investing a set amount regularly (like your paycheck slice!) auto-buys more on dips. A little, steadily, adds up."},
+    {q:"Which is dollar-cost averaging?",opts:["Investing $25 every payday no matter the price","Dumping everything in one lucky day","Only buying when scared","Never investing"],correct:0,why:"Same amount, every payday — exactly what your Money Machine does for you!"},
+  ],
+  buy_hold:[
+    {q:"You own a great company that wiggles up and down for months. The 'buy and hold' investor…",opts:["Sells the moment it dips","Holds patiently, letting it grow over years","Trades it every day","Panics constantly"],correct:1,why:"Buy and hold = patience. Time in the market beats jumping in and out. Let good companies grow!"},
+    {q:"Why does frequent trading often BEAT you?",opts:["It doesn't — daily trading is best","Costs and bad timing add up, and you miss the big up-days","Holding is illegal","No reason"],correct:1,why:"Jumping in and out racks up costs and mistakes. Holding steady usually wins — like your Money Machine does!"},
+  ],
+  diversify_deep:[
+    {q:"You have 10 'eggs' (dollars). The safest basket plan is…",opts:["All 10 in one basket","2 eggs in each of 5 baskets","10 baskets you can't see","Throw them all"],correct:1,why:"Spreading eggs across baskets means one drop won't lose it all. That's diversification!"},
+    {q:"TRUE diversification means owning things that…",opts:["Are all the same company","Move differently, so they don't all crash together","Are all crypto","Are all one type"],correct:1,why:"Owning DIFFERENT kinds of things that don't all move together is what really protects you."},
+  ],
+  dividends:[
+    {q:"A dividend is…",opts:["A fee you pay","A slice of profit a company pays you just for HOLDING its stock","A kind of chart","Free candy"],correct:1,why:"Dividends pay you to wait! Hold good dividend companies and they share profits with you."},
+    {q:"How do dividends reward a 'buy and hold' investor?",opts:["They punish holding","The longer you hold, the more dividend payments you collect","They only pay if you sell fast","They don't"],correct:1,why:"Patience pays — literally. Hold longer, collect more. Dividends reward the buy-and-hold habit!"},
+  ],
+  index:[
+    {q:"An index fund (like the S&P 500) lets you…",opts:["Own just one company","Own a tiny piece of hundreds of companies at once","Guarantee you never lose","Avoid investing"],correct:1,why:"An index fund is instant diversification — hundreds of companies in one buy! It's what your Money Machine uses."},
+    {q:"Why do many smart grown-ups love index funds?",opts:["They're super risky","They're diversified, low-cost, and grow with the whole market over time","They need daily trading","They only lose"],correct:1,why:"Broadly diversified + low cost + long-term growth = why index investing is a favorite."},
+  ],
+  value_growth:[
+    {q:"A 'value' investor is most like a shopper who…",opts:["Buys good things when they're ON SALE","Always pays the highest price","Never buys anything","Only buys the shiniest thing"],correct:0,why:"Value investing = buying good companies for less than they're worth. Like a sale — remember 'When to Buy'!"},
+    {q:"A 'growth' investor bets on companies that…",opts:["Are shrinking","Are growing FAST and could be much bigger later","Never change","Are about to close"],correct:1,why:"Growth investors pay up for fast-growers hoping they get much bigger. Value hunts bargains — two smart paths!"},
+  ],
+  time_in_market:[
+    {q:"Which usually wins?",opts:["Perfectly TIMING the market's ups and downs","TIME IN the market — staying invested for the long run","Panic selling often","Never investing"],correct:1,why:"'Time IN the market beats timing the market.' Nobody times it perfectly — staying invested wins over years!"},
+    {q:"Missing just the market's few BEST days each year usually…",opts:["Helps you","Badly hurts your long-term returns","Doesn't matter","Doubles your money"],correct:1,why:"The best days often come right after scary drops. Panic sellers miss them — so stay invested!"},
+  ],
+  exit_strategy:[
+    {q:"A 'take-profit' plan means you decide…",opts:["To never sell, ever","AHEAD of time the price where you'll sell to lock in gains","To sell in a panic","To ignore winners"],correct:1,why:"Planning your exit before emotions hit keeps you disciplined — lock in profit at a price you chose calmly."},
+    {q:"A STOP-LOSS and a TAKE-PROFIT together help you…",opts:["Guarantee riches","Control your downside AND lock in gains, without panicking","Trade on feelings","Lose faster"],correct:1,why:"Stop-loss caps losses, take-profit locks gains — a calm plan beats emotional decisions every time!"},
+  ],
+};
+
 // Difficulty tag for each lesson so kids (and parents) can see what's age-right.
 // Starter = youngest money basics, Grow = core investing, Pro = advanced ideas.
 const LESSON_LEVELS = {
@@ -1212,6 +1300,7 @@ function KidDash({user,savedState,onLogout}){
   const [slideTimer,   setSlideTimer] = useState(0);      // seconds on current slide
   const [slideReady,   setSlideReady] = useState(false);  // can advance?
   const [inQuiz,       setInQuiz]     = useState(false);  // showing the adventure level?
+  const [challengeMode,setChallengeMode] = useState(false); // playing a lesson's harder Round 2?
   const [qIdx,         setQIdx]       = useState(0);      // current checkpoint index
   const [qAnswer,      setQAnswer]    = useState(null);   // selected answer
   const [qWrong,       setQWrong]     = useState(false);  // wrong this checkpoint?
@@ -1224,6 +1313,7 @@ function KidDash({user,savedState,onLogout}){
   const [buddy,        setBuddy]      = useState(S.buddy || null);  // chosen starter id
   const [pickBuddy,    setPickBuddy]  = useState(false);  // starter picker open
   const [doneLesson,   setDoneLesson] = useState(S.doneLesson || []);
+  const [doneChallenge,setDoneChallenge] = useState(S.doneChallenge || []);     // lesson ids whose harder Round 2 was cleared
   const [lessonDates,  setLessonDates]= useState(S.lessonDates || {});          // {lessonId: completedAt} — powers the weekly Parent Insight
   const [doneMission, setDoneMission] = useState(S.doneMission || []);
   const [tourStep,    setTourStep]    = useState(1);
@@ -1311,9 +1401,9 @@ function KidDash({user,savedState,onLogout}){
   // AUTO-SAVE: persist all state whenever anything important changes
   useEffect(()=>{
     if(!hydrated||!user?.id) return;
-    const snapshot = {cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,career,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
+    const snapshot = {cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneChallenge,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,career,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
     saveData(stateKey(user.id), snapshot);
-  },[cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,career,seenOrderHelp,buddy,hydrated]);
+  },[cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneChallenge,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,career,seenOrderHelp,buddy,hydrated]);
 
   // ── Check for newly-earned badges ──
   useEffect(()=>{
@@ -1407,7 +1497,7 @@ function KidDash({user,savedState,onLogout}){
     const account={id:user.id,name:user.name,avatar:user.avatar,age:user.age,email:user.email,pin:user.pin,theme:user.theme,joinedAt:user.joinedAt};
     // Mirror the auto-save snapshot exactly, so a restore brings back
     // EVERYTHING — pet buddy, equipped cosmetics, pending orders, token day.
-    const state={cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,career,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
+    const state={cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneChallenge,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,career,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
     const code=makeBackupCode(account,state);
     setBackupCode(code); setCopied(false); fx("reward",20);
   };
@@ -1889,12 +1979,23 @@ function KidDash({user,savedState,onLogout}){
   const openLesson = ls => {
     if((LEVEL_OF[ls.id]||1)>=3 && !isPremium){ setShowPlus(true); return; }   // Levels 3–4 are Plus
     const saved = lessonProgress[ls.id];
-    setLesson(ls);
+    setLesson(ls); setChallengeMode(false);
     setLessonSlide(saved?.slide||0);
     setSlideReady(false); setSlideTimer(0);
     setInQuiz(false); setQIdx(0); setQAnswer(null); setQWrong(false);
     setHearts(3); setCombo(0); setBuddyAnim("idle"); setLevelWon(false);
   };
+  // Harder Round 2 — skips the slides, jumps straight to the tougher quiz that
+  // connects back to earlier lessons. Pays the lesson's cash again if cleared.
+  const openChallenge = ls => {
+    if(!LESSON_CHALLENGE[ls.id]) return;
+    if(!buddy){ setPickBuddy(true); return; }
+    setLesson(ls); setChallengeMode(true);
+    setInQuiz(true); setQIdx(0); setQAnswer(null); setQWrong(false);
+    setHearts(3); setCombo(0); setBuddyAnim("idle"); setLevelWon(false);
+  };
+  // The quiz currently in play (harder Round 2, or the normal lesson quiz).
+  const activeQuiz = () => (challengeMode && lesson && LESSON_CHALLENGE[lesson.id]) ? LESSON_CHALLENGE[lesson.id] : (lesson?.quiz || []);
 
   const advanceSlide = () => {
     if(!slideReady) return;
@@ -1913,7 +2014,8 @@ function KidDash({user,savedState,onLogout}){
 
   const answerGame = (i) => {
     if(qAnswer!==null) return;       // already answered, wait
-    const q = lesson.quiz[qIdx];
+    const quiz = activeQuiz();
+    const q = quiz[qIdx];
     setQAnswer(i);
     if(i===q.correct){
       // Correct → hop forward, coins burst, combo up
@@ -1923,12 +2025,12 @@ function KidDash({user,savedState,onLogout}){
       setCoinBurst(true); fx("correct",15);
       setTimeout(()=>setCoinBurst(false),700);
       setTimeout(()=>{
-        if(qIdx < lesson.quiz.length-1){
+        if(qIdx < quiz.length-1){
           setQIdx(x=>x+1); setQAnswer(null); setBuddyAnim("idle");
         } else {
           // Reached the goal → win + cheer
           setBuddyAnim("cheer"); setLevelWon(true); fx("reward",30);
-          setTimeout(()=>completeLesson(lesson.id), 1600);
+          setTimeout(()=>{ challengeMode ? completeChallenge(lesson.id) : completeLesson(lesson.id); }, 1600);
         }
       },800);
     } else {
@@ -1951,8 +2053,8 @@ function KidDash({user,savedState,onLogout}){
   const reviewLesson = () => { setInQuiz(false); setLessonSlide(0); setSlideReady(false); setSlideTimer(0); setQAnswer(null); setQWrong(false); setLevelWon(false); };
 
   const closeLesson = () => {
-    if(lesson) setLessonProg(p=>({...p,[lesson.id]:{...(p[lesson.id]||{}),slide:lessonSlide}}));
-    setLesson(null);
+    if(lesson && !challengeMode) setLessonProg(p=>({...p,[lesson.id]:{...(p[lesson.id]||{}),slide:lessonSlide}}));
+    setLesson(null); setChallengeMode(false); setInQuiz(false);
   };
 
   // Grant a rare collectible card (used by the daily bonus + spin wheel).
@@ -2041,6 +2143,20 @@ function KidDash({user,savedState,onLogout}){
       if(!tryMap[id]) setTimeout(()=>setCashReward(null),3500);
     }
     setLesson(null); setInQuiz(false);
+  };
+
+  // Clearing a lesson's harder Round 2 pays the lesson's cash AGAIN (once) —
+  // extra money to invest, earned by proving they remember the earlier lessons.
+  const completeChallenge = id => {
+    const ls = LESSONS.find(l=>l.id===id);
+    if(ls && !doneChallenge.includes(id)){
+      const reward = ls.cashReward||50;
+      setDoneChallenge(d=>[...d,id]); setXp(x=>x+150); setCoins(c=>c+40); setCash(c=>c+reward);
+      setCashReward({amount:reward,lesson:`${ls.title} — Challenge cleared! 🔥`,tryIt:null});
+      fx("reward",30);
+      setTimeout(()=>setCashReward(null),4000);
+    }
+    setLesson(null); setInQuiz(false); setChallengeMode(false);
   };
 
   const doSpin=()=>{
@@ -2551,7 +2667,14 @@ function KidDash({user,savedState,onLogout}){
                         <div className="map-rew-chip" style={{background:"rgba(6,182,212,.12)",color:"#67e8f9"}}>⚡ +200 XP</div>
                         <div className="map-rew-chip" style={{background:"rgba(245,158,11,.1)",color:"#fde68a"}}>🪙 +50</div>
                       </div>
-                      {done&&<div style={{fontSize:11,fontWeight:800,color:"#86efac"}}>✅ Completed! Cash deposited!</div>}
+                      {done&&(()=>{
+                        const hasCh=!!LESSON_CHALLENGE[ls.id]; const chDone=doneChallenge.includes(ls.id);
+                        return(<div>
+                          <div style={{fontSize:11,fontWeight:800,color:"#86efac",marginBottom:hasCh?7:0}}>✅ Completed!{chDone?" Challenge cleared! 🔥":" Cash deposited!"}</div>
+                          {hasCh&&!chDone&&<button onClick={()=>openChallenge(ls)} style={{padding:"8px 15px",borderRadius:100,border:"1.5px solid rgba(239,68,68,.5)",background:"linear-gradient(135deg,rgba(239,68,68,.22),rgba(245,158,11,.18))",color:"#fca5a5",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>🔥 Challenge Round · earn {fs$(ls.cashReward)} more →</button>}
+                          {hasCh&&chDone&&<div style={{fontSize:10.5,fontWeight:800,color:"rgba(252,165,165,.7)"}}>🔥 Challenge Round done — you really know this one!</div>}
+                        </div>);
+                      })()}
                       {curr&&<button onClick={()=>openLesson(ls)} style={{padding:"9px 18px",borderRadius:100,border:"none",background:`linear-gradient(135deg,${ls.color},${ls.color}99)`,color:"#fff",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer",boxShadow:`0 3px 10px ${ls.color}44`}}>Sail here &amp; earn {fs$(ls.cashReward)} →</button>}
                       {plusLocked&&<button onClick={()=>{setShowPlus(true);setAskedPlus(false);}} style={{padding:"9px 16px",borderRadius:100,border:"none",background:"linear-gradient(135deg,#7c3aed,#a855f7)",color:"#fff",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>⭐ Unlock with Plus</button>}
                       {locked&&<div style={{fontSize:11,color:"rgba(255,255,255,.3)",fontWeight:600}}>🔒 Finish the lesson before this</div>}
@@ -3899,14 +4022,16 @@ function KidDash({user,savedState,onLogout}){
             </>):(<>
               {/* ── ADVENTURE LEVEL ── */}
               {(()=>{
-                const cp = lesson.quiz[qIdx];
-                const total = lesson.quiz.length;
+                const quizArr = challengeMode&&LESSON_CHALLENGE[lesson.id]?LESSON_CHALLENGE[lesson.id]:lesson.quiz;
+                const cp = quizArr[qIdx];
+                const total = quizArr.length;
                 const buddyObj = STARTERS.find(s=>s.id===buddy)||STARTERS[0];
                 return(
                   <div style={{position:"relative",overflow:"hidden"}} className={shake?"shake":""}>
                     {/* red flash on wrong */}
                     {qWrong&&<div style={{position:"absolute",inset:0,background:"#ef4444",opacity:0,animation:"redFlash .5s ease forwards",pointerEvents:"none",zIndex:5,borderRadius:14}}/>}
                     <div className="lesson-body" style={{paddingTop:16}}>
+                      {challengeMode&&<div style={{textAlign:"center",marginBottom:10}}><span style={{display:"inline-block",fontSize:11,fontWeight:800,color:"#fca5a5",background:"rgba(239,68,68,.15)",border:"1px solid rgba(239,68,68,.35)",borderRadius:100,padding:"4px 12px"}}>🔥 CHALLENGE ROUND · think back to earlier lessons!</span></div>}
                       {/* HUD: hearts + combo + checkpoint */}
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                         <div style={{display:"flex",gap:3}}>{[0,1,2].map(h=><span key={h} style={{fontSize:18,opacity:h<hearts?1:.25,transition:"opacity .3s"}}>{h<hearts?"❤️":"🖤"}</span>)}</div>
@@ -3917,7 +4042,7 @@ function KidDash({user,savedState,onLogout}){
                       {/* The adventure path */}
                       <div style={{position:"relative",background:`linear-gradient(180deg,${lesson.color}18,rgba(0,0,0,.2))`,border:`1px solid ${lesson.color}33`,borderRadius:16,padding:"14px 12px",marginBottom:16,minHeight:96}}>
                         <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",height:64,position:"relative"}}>
-                          {lesson.quiz.map((_,n)=>{
+                          {quizArr.map((_,n)=>{
                             const done=n<qIdx, current=n===qIdx;
                             return(
                               <div key={n} style={{display:"flex",flexDirection:"column",alignItems:"center",flex:1,position:"relative"}}>
