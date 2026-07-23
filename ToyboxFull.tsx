@@ -387,20 +387,29 @@ const LESSONS = [
    ],},
 ];
 
-// ─── Careers: the biweekly "paycheck" that funds long-term investing ────────
-// A gentle real-world lesson is baked into the pay ladder: the more school and
-// skill a job needs, the more it pays. Kids pick a job, collect a paycheck
-// every 2 weeks, then feed that money into their Money Machine to INVEST it.
+// ─── Careers & grown-up money life ─────────────────────────────────────────
+// Kids live the real loop: EARN a paycheck → pay the BILLS (rent, food, phone
+// — you have to!) → invest what's LEFT (your savings) → get PROMOTED to a
+// higher-paying job once you've invested from a couple of paychecks. You climb
+// the ladder from lowest to highest, and each promotion means bigger pay AND
+// bigger bills — but more left over to invest. Two lessons baked in:
+//   1) more school/skill → more pay      2) bills come first, then invest.
 const JOBS = [
-  {id:"food",     icon:"🍔",  name:"Fast-Food Crew", pay:100, school:"First job — no experience needed", tip:"Everyone starts somewhere! 🙌"},
-  {id:"cashier",  icon:"🛒",  name:"Store Cashier",  pay:130, school:"A little on-the-job training",     tip:"You handle money all day."},
-  {id:"police",   icon:"👮",  name:"Police Officer", pay:180, school:"Police academy",                   tip:"Keeps the whole town safe."},
-  {id:"teacher",  icon:"🧑‍🏫", name:"Teacher",        pay:210, school:"4 years of college",               tip:"Teaches the next generation."},
-  {id:"engineer", icon:"👷",  name:"Engineer",       pay:280, school:"College + lots of math",           tip:"Builds bridges, apps & rockets."},
-  {id:"business", icon:"💼",  name:"Business Owner",  pay:340, school:"Runs their own company",           tip:"Takes risks to earn rewards."},
-  {id:"doctor",   icon:"🩺",  name:"Doctor",         pay:420, school:"10+ years of school",              tip:"Top pay — it took the most learning!"},
+  {id:"food",     icon:"🍔",  name:"Fast-Food Crew", pay:100, bills:{Home:35,Food:20,Phone:15},          school:"First job — no experience needed"},
+  {id:"cashier",  icon:"🛒",  name:"Store Cashier",  pay:140, bills:{Home:45,Food:25,Phone:15,Other:10}, school:"A little on-the-job training"},
+  {id:"police",   icon:"👮",  name:"Police Officer", pay:200, bills:{Home:65,Food:35,Phone:20,Other:15}, school:"Police academy"},
+  {id:"teacher",  icon:"🧑‍🏫", name:"Teacher",        pay:240, bills:{Home:80,Food:40,Phone:20,Other:20}, school:"4 years of college"},
+  {id:"engineer", icon:"👷",  name:"Engineer",       pay:320, bills:{Home:105,Food:50,Phone:25,Other:30},school:"College + lots of math"},
+  {id:"business", icon:"💼",  name:"Business Owner",  pay:420, bills:{Home:140,Food:65,Phone:30,Other:45},school:"Runs their own company"},
+  {id:"doctor",   icon:"🩺",  name:"Doctor",         pay:560, bills:{Home:190,Food:85,Phone:35,Other:60},school:"10+ years of school"},
 ];
-const PAY_DAYS = 14;   // a paycheck lands every 2 weeks
+const BILL_ICON = {Home:"🏠",Food:"🍎",Phone:"📱",Other:"🚌"};
+const jobBills = (j) => Object.values(j.bills).reduce((a,b)=>a+b,0);   // total bills
+const jobSave  = (j) => j.pay - jobBills(j);                          // left to invest each payday
+const PROMO_INVESTS = 2;   // invest from this many paychecks to earn a promotion
+// Old saves stored {job:'doctor',...}; new shape is index-based. Reset those.
+const freshCareer = () => ({jobIndex:0, period:0, investsAtJob:0, awaitingInvest:false, totalSaved:0});
+const migrateCareer = (c) => (c && typeof c.jobIndex==="number") ? c : freshCareer();
 
 // ─── Challenge Rounds: a harder "Round 2" for each finished lesson ──────────
 // These questions are tougher and deliberately CONNECT to earlier lessons, so
@@ -1266,7 +1275,8 @@ function KidDash({user,savedState,onLogout}){
   const [autoInvest,  setAutoInvest]  = useState(S.autoInvest || null);          // Money Machine: {etf,amount,active,lastRun,totalInvested,paydays}
   const [invPickEtf,  setInvPickEtf]  = useState("VOO");                         // Money Machine setup selections
   const [invPickAmt,  setInvPickAmt]  = useState(25);
-  const [career,      setCareer]      = useState(S.career || null);              // biweekly paycheck: {job,lastPaid,count,total}
+  const [career,      setCareer]      = useState(migrateCareer(S.career));        // money-life: {jobIndex,period,investsAtJob,awaitingInvest,totalSaved}
+  const [invAmt,      setInvAmt]      = useState(null);                           // chosen invest amount this payday (null = not picked)
   const warnedOrders = useRef(new Set());  // orders we've already shown a "not enough cash" toast for
   const [lastBonusClaim,setLastBonusClaim] = useState(S.lastBonusClaim ?? null); // date daily bonus last claimed
   const [lastLessonAt, setLastLessonAt]    = useState(S.lastLessonAt ?? null);   // when a lesson was last completed (jackpot gate)
@@ -1670,53 +1680,56 @@ function KidDash({user,savedState,onLogout}){
   // Whole days since a saved date-string ("" / null = long ago).
   const daysSince = (d) => d ? Math.floor((Date.now()-new Date(d).getTime())/86400000) : 9999;
 
-  // ── Career paycheck: a real income kids EARN every 2 weeks ──────────────
-  // Pick a job → collect a paycheck every 14 days. This is the money they then
-  // INVEST with the Money Machine. Different jobs pay differently on purpose:
-  // more school/skill → more pay (the "learning = earning" lesson, made real).
-  const jobObj  = career ? JOBS.find(j=>j.id===career.job) : null;
-  const payDue  = !!(career && (!career.lastPaid || daysSince(career.lastPaid) >= PAY_DAYS));
-  const payInDays = career ? Math.max(0, PAY_DAYS - daysSince(career.lastPaid)) : 0;
-  const pickJob = (id) => { if(JOBS.some(j=>j.id===id)) setCareer({job:id,lastPaid:"",count:0,total:0}); };   // first paycheck is ready right away
+  // ── Grown-up money life: earn → pay bills → invest savings → get promoted ──
+  const ETFS = MARKET.filter(m=>m.cat==="etf");
+  const curJob   = JOBS[career.jobIndex] || JOBS[0];
+  const nextJob  = JOBS[career.jobIndex+1] || null;      // null = top of the ladder
+  const curBills = jobBills(curJob);
+  const curSave  = jobSave(curJob);                      // paycheck minus bills = what you can invest
+  const chosenEtf = autoInvest?.etf || invPickEtf;       // which ETF savings go into
+
+  // 1) Collect a paycheck. Bills come out first (you have to pay them!), and
+  //    the leftover — your savings — lands in your cash to invest.
   const collectPaycheck = () => {
-    const j = career ? JOBS.find(x=>x.id===career.job) : null; if(!j) return;
-    if(career.lastPaid && daysSince(career.lastPaid) < PAY_DAYS) return;   // not due yet
-    setCash(c=>c+j.pay); setCoins(c=>c+15); setXp(x=>x+30); fx("reward",30);
-    setCareer(cur=>({...cur,lastPaid:new Date().toDateString(),count:(cur.count||0)+1,total:(cur.total||0)+j.pay}));
-    setTaskCelebrate({emoji:j.icon,title:`💰 Payday! +${fs$(j.pay)}`,label:`Your ${j.name} paycheck landed! Smart move: send it into your Money Machine and let it GROW 🌱 — this is money to invest, not to blow.`});
+    if(career.awaitingInvest) return;                    // handle the last paycheck first
+    setCash(c=>c+curSave);                               // net savings after bills
+    setCoins(c=>c+10); setXp(x=>x+20); fx("reward",25);
+    setInvAmt(null);
+    setCareer(cur=>({...cur, period:(cur.period||0)+1, awaitingInvest:true, totalSaved:(cur.totalSaved||0)+curSave}));
+    setTaskCelebrate({emoji:curJob.icon,title:`💰 Payday!  +${fs$(curSave)} to save`,label:`Your ${curJob.name} paycheck was ${fs$(curJob.pay)}. Bills took ${fs$(curBills)} (rent, food, phone — grown-up life!). You kept ${fs$(curSave)} to invest 👇`});
   };
 
-  // ── Money Machine: auto-invest real cash into an ETF (teaches DCA + long-term) ──
-  // Each payday (every 2 weeks) it moves a set amount of your CASH into the
-  // chosen ETF, so the holding steadily grows. It spends real money, so the
-  // paycheck actually matters — and it nudges you to collect one if you're short.
-  const ETFS = MARKET.filter(m=>m.cat==="etf");
-  const doPayday = (plan) => {
-    const asset=MARKET.find(m=>m.ticker===plan.etf); if(!asset) return plan;
-    const amt=Math.max(1,plan.amount||0);
-    if(cash < amt){   // not enough cash — nudge, don't invest
-      setTaskCelebrate({emoji:"💸",title:"Money Machine is hungry!",label:`It wanted to invest ${fs$(amt)} but you only have ${fs$(cash)}. Collect your paycheck 💼 to feed it!`});
-      return {...plan,lastRun:new Date().toDateString()};
-    }
+  // 2) Invest your savings into the chosen ETF. Any amount > 0 handles this
+  //    paycheck and counts toward your next promotion. Buys real ETF shares.
+  const investSavings = (amtWanted) => {
+    const asset=MARKET.find(m=>m.ticker===chosenEtf); if(!asset) return;
+    const amt=Math.min(Math.max(1,Math.round(amtWanted||0)), Math.floor(cash));
+    if(amt<1){ setTaskCelebrate({emoji:"💸",title:"No savings yet!",label:"Collect a paycheck first, then invest what's left after bills."}); return; }
     const price=prices[asset.ticker]||asset.basePrice;
     const qty=amt/price;
-    setCash(c=>c-amt);   // spend real cash
+    setCash(c=>c-amt);
     setPort(prev=>{ const h=prev.find(p=>p.ticker===asset.ticker); return h?prev.map(p=>p.ticker===asset.ticker?{...p,qty:p.qty+qty,avgCost:(p.avgCost*p.qty+price*qty)/(p.qty+qty)}:p):[...prev,{ticker:asset.ticker,name:asset.name,type:asset.type,qty,avgCost:price,icon:asset.icon,color:asset.color}]; });
     const now=new Date();
     setTrades(ts=>[{id:Date.now()+Math.random(),date:now.toLocaleDateString("en-US",{day:"numeric",month:"short"}),time:now.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),ticker:asset.ticker,name:asset.name,icon:asset.icon,side:"BUY",qty,price,total:amt,pnl:null,auto:true,longTerm:true},...ts]);
-    setCoins(c=>c+5); setXp(x=>x+15);
-    setTaskCelebrate({emoji:"🏦",title:"📈 Auto-Invested!",label:`Your Money Machine moved ${fs$(amt)} into ${asset.name}. It's planted for the long run 🌱 — let it grow, don't dig it up to trade!`});
-    return {...plan,lastRun:new Date().toDateString(),totalInvested:(plan.totalInvested||0)+amt,paydays:(plan.paydays||0)+1};
+    setCoins(c=>c+5); setXp(x=>x+15); fx("reward",25);
+    setAutoInvest(a=>({etf:asset.ticker, amount:curSave, active:true, totalInvested:(a?.totalInvested||0)+amt, paydays:(a?.paydays||0)+1}));
+    setInvAmt(null);
+    // Only a paycheck you were "awaiting" counts toward promotion (one per paycheck).
+    if(career.awaitingInvest){
+      const invests=(career.investsAtJob||0)+1;
+      if(invests>=PROMO_INVESTS && nextJob){
+        setCareer(cur=>({...cur, awaitingInvest:false, investsAtJob:0, jobIndex:cur.jobIndex+1}));
+        setTaskCelebrate({emoji:nextJob.icon,title:`🎉 PROMOTED to ${nextJob.name}!`,label:`You invested like a pro, so you leveled up! New pay: ${fs$(nextJob.pay)} every payday (bills go up too — that's real life). More to invest now! 🚀`});
+      } else {
+        setCareer(cur=>({...cur, awaitingInvest:false, investsAtJob:invests}));
+        setTaskCelebrate({emoji:"📈",title:"Invested! 🌱",label:`${fs$(amt)} into ${asset.name} — planted for the long run. ${nextJob?`Invest from ${PROMO_INVESTS-invests} more paycheck${PROMO_INVESTS-invests===1?"":"s"} to get promoted to ${nextJob.name}!`:"You're at the TOP job — keep investing to grow rich! 🏆"}`});
+      }
+    } else {
+      setTaskCelebrate({emoji:"📈",title:"Invested! 🌱",label:`${fs$(amt)} into ${asset.name} — planted for the long run to grow.`});
+    }
   };
-  const startPlan = (etf,amount) => setAutoInvest(doPayday({etf,amount,active:true,lastRun:"",totalInvested:0,paydays:0}));
-  const stopPlan = () => setAutoInvest(a=>a?{...a,active:false}:a);
-  // Auto-run one payday every 2 weeks when the plan is on (once per app open).
-  const paydayRan=useRef(false);
-  useEffect(()=>{
-    if(!hydrated||paydayRan.current) return; paydayRan.current=true;
-    const t=setTimeout(()=>{ if(autoInvest?.active && daysSince(autoInvest.lastRun) >= PAY_DAYS) setAutoInvest(doPayday(autoInvest)); },2600);
-    return()=>clearTimeout(t);
-  },[hydrated]);
+  const pickEtf = (t) => { setInvPickEtf(t); if(autoInvest) setAutoInvest(a=>({...a,etf:t})); };
+
   // Time Machine: project a value forward at ~7%/yr with monthly contributions.
   const projectFuture = (years,principal,monthly) => {
     const r=0.07, mr=r/12, months=years*12;
@@ -3358,62 +3371,64 @@ function KidDash({user,savedState,onLogout}){
               </div>
             )}
 
-            {/* Money Machine — Earn (paycheck) → Invest (auto-invest) → Grow (Time Machine) */}
+            {/* Grown-Up Money Life — Earn a paycheck → pay bills → invest savings → get promoted */}
             {moreView==="Invest"&&(()=>{
-              const active=autoInvest&&autoInvest.active;
-              const planEtf=active?MARKET.find(m=>m.ticker===autoInvest.etf):null;
-              const holdVal=active&&planEtf?(portfolio.find(h=>h.ticker===planEtf.ticker)?.qty||0)*(prices[planEtf.ticker]||planEtf.basePrice):0;
-              const perPay=active?autoInvest.amount:25;            // invested each payday
-              const monthly=Math.round(perPay*2.17);              // ≈ monthly, for the Time Machine projection
+              const hasEtf   = !!autoInvest?.etf;
+              const holdAsset= MARKET.find(m=>m.ticker===chosenEtf);
+              const holdVal  = holdAsset?(portfolio.find(h=>h.ticker===holdAsset.ticker)?.qty||0)*(prices[holdAsset.ticker]||holdAsset.basePrice):0;
+              const invested = autoInvest?.totalInvested||0;
+              const availCash= Math.floor(cash);
+              const monthly  = Math.round(curSave*2.17);          // ≈ monthly saving, for the Time Machine
+              const promoLeft= nextJob?Math.max(0,PROMO_INVESTS-(career.investsAtJob||0)):0;
+              const billRows = Object.entries(curJob.bills);
               return(
               <div>
                 <div style={{background:"linear-gradient(135deg,rgba(59,130,246,.16),rgba(16,185,129,.08))",border:"1px solid rgba(59,130,246,.3)",borderRadius:"var(--rl)",padding:18,textAlign:"center",marginBottom:16}}>
                   <div style={{fontSize:40,marginBottom:6}}>🏦</div>
                   <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",marginBottom:6}}>Money Machine</div>
-                  <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.72)",lineHeight:1.6}}>The grown-up money loop: <strong style={{color:"#fbbf24"}}>Earn</strong> a paycheck 💼 → <strong style={{color:"#60a5fa"}}>Invest</strong> a slice 📈 → <strong style={{color:"#86efac"}}>Grow</strong> it for years 🌳.</div>
+                  <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.72)",lineHeight:1.6}}>Live the grown-up money loop: <strong style={{color:"#fbbf24"}}>Earn</strong> 💼 → <strong style={{color:"#fca5a5"}}>pay the bills</strong> 🏠 → <strong style={{color:"#60a5fa"}}>invest what's left</strong> 📈 → <strong style={{color:"#86efac"}}>get promoted!</strong> 🚀</div>
                 </div>
 
-                {/* ── STEP 1 · EARN: pick a job, collect a paycheck every 2 weeks ── */}
-                <div style={{fontSize:13,fontWeight:800,color:"#fbbf24",marginBottom:9}}>💼 Step 1 · Earn a paycheck</div>
-                {!career?(<>
-                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,marginBottom:11}}>Pick a job to be. You'll get paid every 2 weeks. Notice: <strong style={{color:"#fff"}}>the more school & skill a job needs, the more it pays</strong> — that's real life! 📚→💰</div>
-                  <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
-                    {JOBS.map(j=>(
-                      <button key={j.id} onClick={()=>pickJob(j.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",borderRadius:13,border:"1.5px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.05)",color:"#fff",cursor:"pointer",textAlign:"left"}}>
-                        <span style={{fontSize:26,flexShrink:0}}>{j.icon}</span>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontFamily:"var(--fd)",fontSize:15}}>{j.name}</div>
-                          <div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.45)"}}>🎓 {j.school}</div>
-                        </div>
-                        <div style={{textAlign:"right",flexShrink:0}}>
-                          <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#86efac"}}>{fs$(j.pay)}</div>
-                          <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)"}}>every 2 wks</div>
-                        </div>
-                      </button>
-                    ))}
+                {/* Career ladder — climb from lowest to highest by investing */}
+                <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,padding:"12px 12px 10px",marginBottom:16}}>
+                  <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.5)",marginBottom:8,textAlign:"center"}}>🪜 YOUR CAREER LADDER</div>
+                  <div style={{display:"flex",gap:4,alignItems:"flex-end"}}>
+                    {JOBS.map((j,i)=>{ const done=i<career.jobIndex, cur=i===career.jobIndex;
+                      return(<div key={j.id} style={{flex:1,textAlign:"center"}}>
+                        <div style={{fontSize:cur?24:16,opacity:done?.9:cur?1:.3,lineHeight:1}}>{i>career.jobIndex?"🔒":j.icon}</div>
+                        <div style={{height:4,borderRadius:4,marginTop:5,background:cur?"#fbbf24":done?"#86efac":"rgba(255,255,255,.12)"}}/>
+                      </div>);
+                    })}
                   </div>
-                </>):(<>
-                  <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.14),rgba(245,158,11,.05))",border:"1px solid rgba(245,158,11,.3)",borderRadius:16,padding:15,marginBottom:18}}>
-                    <div style={{display:"flex",alignItems:"center",gap:11,marginBottom:12}}>
-                      <span style={{fontSize:30}}>{jobObj?.icon}</span>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{jobObj?.name}</div>
-                        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)"}}>{fs$(jobObj?.pay||0)} every 2 weeks · {career.count||0} paid so far</div>
-                      </div>
-                      <button onClick={()=>setCareer(null)} style={{background:"transparent",border:"1px solid rgba(255,255,255,.18)",borderRadius:9,padding:"5px 8px",color:"rgba(255,255,255,.5)",fontSize:10,fontWeight:800,cursor:"pointer",flexShrink:0}}>Switch job</button>
-                    </div>
-                    {payDue
-                      ?<button onClick={collectPaycheck} style={{width:"100%",padding:14,borderRadius:13,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer",boxShadow:"0 6px 18px rgba(245,158,11,.4)"}}>💰 Collect my {fs$(jobObj?.pay||0)} paycheck!</button>
-                      :<div style={{textAlign:"center",padding:"10px",borderRadius:12,background:"rgba(255,255,255,.05)",fontSize:12,fontWeight:800,color:"rgba(255,255,255,.55)"}}>⏳ Next paycheck in {payInDays} day{payInDays===1?"":"s"} — come back then!</div>}
-                    <div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.45)",textAlign:"center",marginTop:9,lineHeight:1.5}}>This is money to <strong style={{color:"#fbbf24"}}>invest</strong> below 👇 — not to blow on quick trades.</div>
-                  </div>
-                </>)}
+                  <div style={{textAlign:"center",marginTop:8,fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{curJob.icon} {curJob.name} <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.45)"}}>· {fs$(curJob.pay)}/payday</span></div>
+                  <div style={{textAlign:"center",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.4)"}}>🎓 {curJob.school}</div>
+                </div>
 
-                {/* ── STEP 2 · INVEST: Money Machine spends real cash into an ETF ── */}
-                <div style={{fontSize:13,fontWeight:800,color:"#60a5fa",marginBottom:9}}>📈 Step 2 · Auto-invest it</div>
-                {!active?(<>
-                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",marginBottom:9}}>Pick a basket of companies (an ETF) 🧺</div>
-                  <div style={{display:"flex",gap:9,marginBottom:16}}>
+                {/* ── STEP 1 · PAYDAY & BUDGET ── */}
+                <div style={{fontSize:13,fontWeight:800,color:"#fbbf24",marginBottom:9}}>💼 Step 1 · Payday &amp; bills</div>
+                {!career.awaitingInvest?(
+                  <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.14),rgba(245,158,11,.05))",border:"1px solid rgba(245,158,11,.3)",borderRadius:16,padding:15,marginBottom:18}}>
+                    <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",textAlign:"center",marginBottom:11,lineHeight:1.5}}>Time to get paid! Your {curJob.name} paycheck is <strong style={{color:"#fff"}}>{fs$(curJob.pay)}</strong>, but bills take <strong style={{color:"#fca5a5"}}>{fs$(curBills)}</strong> first — you'll keep <strong style={{color:"#86efac"}}>{fs$(curSave)}</strong> to invest.</div>
+                    <button onClick={collectPaycheck} style={{width:"100%",padding:14,borderRadius:13,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer",boxShadow:"0 6px 18px rgba(245,158,11,.4)"}}>💰 Collect payday #{(career.period||0)+1}</button>
+                  </div>
+                ):(
+                  <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:15,marginBottom:18}}>
+                    <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.5)",marginBottom:8}}>🧾 YOUR BUDGET THIS PAYDAY</div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontFamily:"var(--fd)",fontSize:15,color:"#86efac",marginBottom:6}}><span>{curJob.icon} Paycheck</span><span>+{fs$(curJob.pay)}</span></div>
+                    {billRows.map(([k,v])=>(
+                      <div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,.6)",marginBottom:4}}><span>{BILL_ICON[k]||"•"} {k==="Other"?"Getting around & fun":k==="Home"?"Home (rent)":k}</span><span style={{color:"#fca5a5"}}>−{fs$(v)}</span></div>
+                    ))}
+                    <div style={{height:1,background:"rgba(255,255,255,.12)",margin:"9px 0"}}/>
+                    <div style={{display:"flex",justifyContent:"space-between",fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}><span>🐷 Left to invest</span><span style={{color:"#86efac"}}>{fs$(curSave)}</span></div>
+                    <div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.45)",textAlign:"center",marginTop:9,lineHeight:1.5}}>Bills always come first (needs!). Now invest your savings below 👇</div>
+                  </div>
+                )}
+
+                {/* ── STEP 2 · INVEST YOUR SAVINGS ── */}
+                <div style={{fontSize:13,fontWeight:800,color:"#60a5fa",marginBottom:9}}>📈 Step 2 · Invest your savings</div>
+                {!hasEtf&&(<>
+                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",marginBottom:9}}>First, pick a basket of companies (an ETF) 🧺 — your savings grow inside it.</div>
+                  <div style={{display:"flex",gap:9,marginBottom:14}}>
                     {ETFS.map(e=>(
                       <button key={e.ticker} onClick={()=>setInvPickEtf(e.ticker)} style={{flex:1,padding:"13px 10px",borderRadius:13,border:`2px solid ${invPickEtf===e.ticker?"rgba(59,130,246,.6)":"rgba(255,255,255,.14)"}`,background:invPickEtf===e.ticker?"rgba(59,130,246,.16)":"rgba(255,255,255,.05)",color:"#fff",cursor:"pointer",textAlign:"left"}}>
                         <div style={{fontSize:22}}>{e.icon}</div>
@@ -3422,29 +3437,50 @@ function KidDash({user,savedState,onLogout}){
                       </button>
                     ))}
                   </div>
-                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",marginBottom:9}}>How much of your cash each payday? 💵</div>
-                  <div style={{display:"flex",gap:8,marginBottom:18}}>
-                    {[10,25,50].map(a=>(
-                      <button key={a} onClick={()=>setInvPickAmt(a)} style={{flex:1,padding:"11px",borderRadius:12,border:`1.5px solid ${invPickAmt===a?"rgba(16,185,129,.6)":"rgba(255,255,255,.14)"}`,background:invPickAmt===a?"rgba(16,185,129,.16)":"transparent",color:invPickAmt===a?"#86efac":"rgba(255,255,255,.6)",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer"}}>${a}</button>
-                    ))}
-                  </div>
-                  <button onClick={()=>startPlan(invPickEtf,invPickAmt)} style={{width:"100%",padding:15,borderRadius:15,border:"none",background:"linear-gradient(135deg,#3b82f6,#2563eb)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer",boxShadow:"0 6px 20px rgba(59,130,246,.4)"}}>🏦 Start my Money Machine!</button>
-                  <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.4)",textAlign:"center",marginTop:10,lineHeight:1.5}}>It moves that much of your cash into your ETF every 2 weeks. Turn it off anytime.</div>
-                </>):(<>
-                  <div style={{background:"rgba(59,130,246,.1)",border:"1px solid rgba(59,130,246,.3)",borderRadius:16,padding:16,marginBottom:16}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-                      <span style={{fontSize:30}}>{planEtf?.icon}</span>
-                      <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{fs$(autoInvest.amount)} → {planEtf?.name} every 2 wks</div><div style={{fontSize:11,fontWeight:700,color:"#86efac"}}>✅ Running · spends your cash automatically</div></div>
+                </>)}
+                {hasEtf&&(
+                  <div style={{background:"rgba(59,130,246,.1)",border:"1px solid rgba(59,130,246,.3)",borderRadius:16,padding:14,marginBottom:14}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:11}}>
+                      <span style={{fontSize:26}}>{holdAsset?.icon}</span>
+                      <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff"}}>{holdAsset?.name}</div><div style={{fontSize:10.5,fontWeight:700,color:"#86efac"}}>🔒 Long-term — held to grow, not traded away</div></div>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-                      {[["🏦 Invested",fs$(autoInvest.totalInvested||0)],["📈 Now worth",fs$(holdVal)],["📅 Paydays",`${autoInvest.paydays||0}`]].map(([l,v])=>(
+                      {[["🏦 Invested",fs$(invested)],["📈 Now worth",fs$(holdVal)],["📅 Paydays",`${autoInvest?.paydays||0}`]].map(([l,v])=>(
                         <div key={l} style={{background:"rgba(255,255,255,.05)",borderRadius:10,padding:"9px 8px",textAlign:"center"}}><div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)"}}>{l}</div><div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{v}</div></div>
                       ))}
                     </div>
-                    <div style={{marginTop:11,background:"rgba(16,185,129,.1)",border:"1px solid rgba(16,185,129,.25)",borderRadius:11,padding:"9px 11px",fontSize:11,fontWeight:700,color:"#86efac",lineHeight:1.5}}>🔒 This is a <strong>long-term</strong> investment. We hold it to grow — selling it early to trade breaks the magic! 🌱</div>
-                    <button onClick={stopPlan} style={{width:"100%",marginTop:12,padding:10,borderRadius:11,border:"1px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.55)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer"}}>Pause my Money Machine</button>
                   </div>
-                </>)}
+                )}
+                {career.awaitingInvest?(
+                  <div style={{marginBottom:18}}>
+                    <button onClick={()=>investSavings(curSave)} disabled={availCash<1} style={{width:"100%",padding:15,borderRadius:15,border:"none",background:availCash<1?"rgba(255,255,255,.1)":"linear-gradient(135deg,#3b82f6,#2563eb)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:availCash<1?"not-allowed":"pointer",boxShadow:availCash<1?"none":"0 6px 20px rgba(59,130,246,.4)"}}>📈 Invest my {fs$(Math.min(curSave,availCash))} savings</button>
+                    <button onClick={()=>investSavings(Math.round(curSave/2))} disabled={availCash<1} style={{width:"100%",marginTop:9,padding:11,borderRadius:12,border:"1.5px solid rgba(255,255,255,.18)",background:"transparent",color:"rgba(255,255,255,.7)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:availCash<1?"not-allowed":"pointer"}}>Invest half, keep {fs$(curSave-Math.round(curSave/2))} for fun 🍦</button>
+                    <div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.4)",textAlign:"center",marginTop:9,lineHeight:1.5}}>Investing any amount handles this paycheck and counts toward your next promotion.</div>
+                  </div>
+                ):(
+                  <div style={{textAlign:"center",padding:"12px",borderRadius:12,background:"rgba(255,255,255,.04)",fontSize:12,fontWeight:800,color:"rgba(255,255,255,.5)",marginBottom:18}}>✅ This paycheck is handled. Collect your next payday above to invest more!</div>
+                )}
+
+                {/* ── PROMOTION TRACKER ── */}
+                {nextJob?(
+                  <div style={{background:"linear-gradient(135deg,rgba(16,185,129,.12),rgba(59,130,246,.06))",border:"1px solid rgba(16,185,129,.3)",borderRadius:16,padding:15,marginBottom:16}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                      <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>🎯 Next promotion</div>
+                      <div style={{fontSize:12,fontWeight:800,color:"#86efac"}}>{nextJob.icon} {nextJob.name}</div>
+                    </div>
+                    <div style={{display:"flex",gap:6,marginBottom:8}}>
+                      {Array.from({length:PROMO_INVESTS}).map((_,i)=>(
+                        <div key={i} style={{flex:1,height:9,borderRadius:6,background:i<(career.investsAtJob||0)?"#86efac":"rgba(255,255,255,.12)"}}/>
+                      ))}
+                    </div>
+                    <div style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5}}>{promoLeft===0?"Invest this payday to get promoted! 🎉":`Invest from ${promoLeft} more payday${promoLeft===1?"":"s"} → promoted to ${nextJob.name} (${fs$(nextJob.pay)}/payday, +${fs$(jobSave(nextJob)-curSave)} more to invest)!`}</div>
+                  </div>
+                ):(
+                  <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.14),rgba(124,58,237,.08))",border:"1px solid rgba(245,158,11,.3)",borderRadius:16,padding:15,marginBottom:16,textAlign:"center"}}>
+                    <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fde68a"}}>🏆 Top of the ladder!</div>
+                    <div style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,.6)",marginTop:4,lineHeight:1.5}}>You climbed from Fast-Food Crew to Doctor by investing every payday. Keep it up and watch your money grow! 🌳</div>
+                  </div>
+                )}
 
                 {/* Time Machine */}
                 <div style={{fontSize:13,fontWeight:800,color:"#86efac",marginBottom:9,marginTop:4}}>🌳 Step 3 · Watch it grow</div>
