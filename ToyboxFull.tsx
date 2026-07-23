@@ -387,6 +387,21 @@ const LESSONS = [
    ],},
 ];
 
+// ─── Careers: the biweekly "paycheck" that funds long-term investing ────────
+// A gentle real-world lesson is baked into the pay ladder: the more school and
+// skill a job needs, the more it pays. Kids pick a job, collect a paycheck
+// every 2 weeks, then feed that money into their Money Machine to INVEST it.
+const JOBS = [
+  {id:"food",     icon:"🍔",  name:"Fast-Food Crew", pay:100, school:"First job — no experience needed", tip:"Everyone starts somewhere! 🙌"},
+  {id:"cashier",  icon:"🛒",  name:"Store Cashier",  pay:130, school:"A little on-the-job training",     tip:"You handle money all day."},
+  {id:"police",   icon:"👮",  name:"Police Officer", pay:180, school:"Police academy",                   tip:"Keeps the whole town safe."},
+  {id:"teacher",  icon:"🧑‍🏫", name:"Teacher",        pay:210, school:"4 years of college",               tip:"Teaches the next generation."},
+  {id:"engineer", icon:"👷",  name:"Engineer",       pay:280, school:"College + lots of math",           tip:"Builds bridges, apps & rockets."},
+  {id:"business", icon:"💼",  name:"Business Owner",  pay:340, school:"Runs their own company",           tip:"Takes risks to earn rewards."},
+  {id:"doctor",   icon:"🩺",  name:"Doctor",         pay:420, school:"10+ years of school",              tip:"Top pay — it took the most learning!"},
+];
+const PAY_DAYS = 14;   // a paycheck lands every 2 weeks
+
 // Difficulty tag for each lesson so kids (and parents) can see what's age-right.
 // Starter = youngest money basics, Grow = core investing, Pro = advanced ideas.
 const LESSON_LEVELS = {
@@ -1163,6 +1178,7 @@ function KidDash({user,savedState,onLogout}){
   const [autoInvest,  setAutoInvest]  = useState(S.autoInvest || null);          // Money Machine: {etf,amount,active,lastRun,totalInvested,paydays}
   const [invPickEtf,  setInvPickEtf]  = useState("VOO");                         // Money Machine setup selections
   const [invPickAmt,  setInvPickAmt]  = useState(25);
+  const [career,      setCareer]      = useState(S.career || null);              // biweekly paycheck: {job,lastPaid,count,total}
   const warnedOrders = useRef(new Set());  // orders we've already shown a "not enough cash" toast for
   const [lastBonusClaim,setLastBonusClaim] = useState(S.lastBonusClaim ?? null); // date daily bonus last claimed
   const [lastLessonAt, setLastLessonAt]    = useState(S.lastLessonAt ?? null);   // when a lesson was last completed (jackpot gate)
@@ -1295,9 +1311,9 @@ function KidDash({user,savedState,onLogout}){
   // AUTO-SAVE: persist all state whenever anything important changes
   useEffect(()=>{
     if(!hydrated||!user?.id) return;
-    const snapshot = {cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
+    const snapshot = {cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,career,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
     saveData(stateKey(user.id), snapshot);
-  },[cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,seenOrderHelp,buddy,hydrated]);
+  },[cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,career,seenOrderHelp,buddy,hydrated]);
 
   // ── Check for newly-earned badges ──
   useEffect(()=>{
@@ -1391,7 +1407,7 @@ function KidDash({user,savedState,onLogout}){
     const account={id:user.id,name:user.name,avatar:user.avatar,age:user.age,email:user.email,pin:user.pin,theme:user.theme,joinedAt:user.joinedAt};
     // Mirror the auto-save snapshot exactly, so a restore brings back
     // EVERYTHING — pet buddy, equipped cosmetics, pending orders, token day.
-    const state={cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
+    const state={cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,career,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
     const code=makeBackupCode(account,state);
     setBackupCode(code); setCopied(false); fx("reward",20);
   };
@@ -1561,29 +1577,54 @@ function KidDash({user,savedState,onLogout}){
   // Dismiss alert after 5s
   useEffect(()=>{if(!alertToast)return;const t=setTimeout(()=>setAlertToast(null),5000);return()=>clearTimeout(t);},[alertToast]);
 
-  // ── Money Machine: recurring auto-invest into an ETF (teaches DCA + long-term) ──
-  // Each "payday" (once per day) the plan gifts a set amount and invests it all
-  // into the chosen ETF, so the holding steadily grows — the long-term habit.
+  // Whole days since a saved date-string ("" / null = long ago).
+  const daysSince = (d) => d ? Math.floor((Date.now()-new Date(d).getTime())/86400000) : 9999;
+
+  // ── Career paycheck: a real income kids EARN every 2 weeks ──────────────
+  // Pick a job → collect a paycheck every 14 days. This is the money they then
+  // INVEST with the Money Machine. Different jobs pay differently on purpose:
+  // more school/skill → more pay (the "learning = earning" lesson, made real).
+  const jobObj  = career ? JOBS.find(j=>j.id===career.job) : null;
+  const payDue  = !!(career && (!career.lastPaid || daysSince(career.lastPaid) >= PAY_DAYS));
+  const payInDays = career ? Math.max(0, PAY_DAYS - daysSince(career.lastPaid)) : 0;
+  const pickJob = (id) => { if(JOBS.some(j=>j.id===id)) setCareer({job:id,lastPaid:"",count:0,total:0}); };   // first paycheck is ready right away
+  const collectPaycheck = () => {
+    const j = career ? JOBS.find(x=>x.id===career.job) : null; if(!j) return;
+    if(career.lastPaid && daysSince(career.lastPaid) < PAY_DAYS) return;   // not due yet
+    setCash(c=>c+j.pay); setCoins(c=>c+15); setXp(x=>x+30); fx("reward",30);
+    setCareer(cur=>({...cur,lastPaid:new Date().toDateString(),count:(cur.count||0)+1,total:(cur.total||0)+j.pay}));
+    setTaskCelebrate({emoji:j.icon,title:`💰 Payday! +${fs$(j.pay)}`,label:`Your ${j.name} paycheck landed! Smart move: send it into your Money Machine and let it GROW 🌱 — this is money to invest, not to blow.`});
+  };
+
+  // ── Money Machine: auto-invest real cash into an ETF (teaches DCA + long-term) ──
+  // Each payday (every 2 weeks) it moves a set amount of your CASH into the
+  // chosen ETF, so the holding steadily grows. It spends real money, so the
+  // paycheck actually matters — and it nudges you to collect one if you're short.
   const ETFS = MARKET.filter(m=>m.cat==="etf");
   const doPayday = (plan) => {
     const asset=MARKET.find(m=>m.ticker===plan.etf); if(!asset) return plan;
     const amt=Math.max(1,plan.amount||0);
+    if(cash < amt){   // not enough cash — nudge, don't invest
+      setTaskCelebrate({emoji:"💸",title:"Money Machine is hungry!",label:`It wanted to invest ${fs$(amt)} but you only have ${fs$(cash)}. Collect your paycheck 💼 to feed it!`});
+      return {...plan,lastRun:new Date().toDateString()};
+    }
     const price=prices[asset.ticker]||asset.basePrice;
     const qty=amt/price;
+    setCash(c=>c-amt);   // spend real cash
     setPort(prev=>{ const h=prev.find(p=>p.ticker===asset.ticker); return h?prev.map(p=>p.ticker===asset.ticker?{...p,qty:p.qty+qty,avgCost:(p.avgCost*p.qty+price*qty)/(p.qty+qty)}:p):[...prev,{ticker:asset.ticker,name:asset.name,type:asset.type,qty,avgCost:price,icon:asset.icon,color:asset.color}]; });
     const now=new Date();
-    setTrades(ts=>[{id:Date.now()+Math.random(),date:now.toLocaleDateString("en-US",{day:"numeric",month:"short"}),time:now.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),ticker:asset.ticker,name:asset.name,icon:asset.icon,side:"BUY",qty,price,total:amt,pnl:null,auto:true},...ts]);
-    setCoins(c=>c+10); setXp(x=>x+20);
-    setTaskCelebrate({emoji:"🏦",title:"💰 Payday!",label:`Your Money Machine auto-invested ${fs$(amt)} into ${asset.name}. Keep it up — this is how real wealth grows! 📈`});
+    setTrades(ts=>[{id:Date.now()+Math.random(),date:now.toLocaleDateString("en-US",{day:"numeric",month:"short"}),time:now.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),ticker:asset.ticker,name:asset.name,icon:asset.icon,side:"BUY",qty,price,total:amt,pnl:null,auto:true,longTerm:true},...ts]);
+    setCoins(c=>c+5); setXp(x=>x+15);
+    setTaskCelebrate({emoji:"🏦",title:"📈 Auto-Invested!",label:`Your Money Machine moved ${fs$(amt)} into ${asset.name}. It's planted for the long run 🌱 — let it grow, don't dig it up to trade!`});
     return {...plan,lastRun:new Date().toDateString(),totalInvested:(plan.totalInvested||0)+amt,paydays:(plan.paydays||0)+1};
   };
   const startPlan = (etf,amount) => setAutoInvest(doPayday({etf,amount,active:true,lastRun:"",totalInvested:0,paydays:0}));
   const stopPlan = () => setAutoInvest(a=>a?{...a,active:false}:a);
-  // Auto-run one payday per day when the plan is on (once per app open).
+  // Auto-run one payday every 2 weeks when the plan is on (once per app open).
   const paydayRan=useRef(false);
   useEffect(()=>{
     if(!hydrated||paydayRan.current) return; paydayRan.current=true;
-    const t=setTimeout(()=>{ if(autoInvest?.active && autoInvest.lastRun!==new Date().toDateString()) setAutoInvest(doPayday(autoInvest)); },2600);
+    const t=setTimeout(()=>{ if(autoInvest?.active && daysSince(autoInvest.lastRun) >= PAY_DAYS) setAutoInvest(doPayday(autoInvest)); },2600);
     return()=>clearTimeout(t);
   },[hydrated]);
   // Time Machine: project a value forward at ~7%/yr with monthly contributions.
@@ -3194,22 +3235,61 @@ function KidDash({user,savedState,onLogout}){
               </div>
             )}
 
-            {/* Money Machine — recurring auto-invest into an ETF + Time Machine */}
+            {/* Money Machine — Earn (paycheck) → Invest (auto-invest) → Grow (Time Machine) */}
             {moreView==="Invest"&&(()=>{
               const active=autoInvest&&autoInvest.active;
               const planEtf=active?MARKET.find(m=>m.ticker===autoInvest.etf):null;
               const holdVal=active&&planEtf?(portfolio.find(h=>h.ticker===planEtf.ticker)?.qty||0)*(prices[planEtf.ticker]||planEtf.basePrice):0;
-              const monthly=active?autoInvest.amount:25;   // used for the Time Machine projection
+              const perPay=active?autoInvest.amount:25;            // invested each payday
+              const monthly=Math.round(perPay*2.17);              // ≈ monthly, for the Time Machine projection
               return(
               <div>
                 <div style={{background:"linear-gradient(135deg,rgba(59,130,246,.16),rgba(16,185,129,.08))",border:"1px solid rgba(59,130,246,.3)",borderRadius:"var(--rl)",padding:18,textAlign:"center",marginBottom:16}}>
                   <div style={{fontSize:40,marginBottom:6}}>🏦</div>
                   <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",marginBottom:6}}>Money Machine</div>
-                  <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.72)",lineHeight:1.6}}>Invest a little <strong style={{color:"#fff"}}>every day, automatically</strong>, into a whole basket of companies (an ETF). This is how grown-ups build real wealth — slow and steady! 🌱→🌳</div>
+                  <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.72)",lineHeight:1.6}}>The grown-up money loop: <strong style={{color:"#fbbf24"}}>Earn</strong> a paycheck 💼 → <strong style={{color:"#60a5fa"}}>Invest</strong> a slice 📈 → <strong style={{color:"#86efac"}}>Grow</strong> it for years 🌳.</div>
                 </div>
 
+                {/* ── STEP 1 · EARN: pick a job, collect a paycheck every 2 weeks ── */}
+                <div style={{fontSize:13,fontWeight:800,color:"#fbbf24",marginBottom:9}}>💼 Step 1 · Earn a paycheck</div>
+                {!career?(<>
+                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,marginBottom:11}}>Pick a job to be. You'll get paid every 2 weeks. Notice: <strong style={{color:"#fff"}}>the more school & skill a job needs, the more it pays</strong> — that's real life! 📚→💰</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
+                    {JOBS.map(j=>(
+                      <button key={j.id} onClick={()=>pickJob(j.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",borderRadius:13,border:"1.5px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.05)",color:"#fff",cursor:"pointer",textAlign:"left"}}>
+                        <span style={{fontSize:26,flexShrink:0}}>{j.icon}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontFamily:"var(--fd)",fontSize:15}}>{j.name}</div>
+                          <div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.45)"}}>🎓 {j.school}</div>
+                        </div>
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#86efac"}}>{fs$(j.pay)}</div>
+                          <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)"}}>every 2 wks</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>):(<>
+                  <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.14),rgba(245,158,11,.05))",border:"1px solid rgba(245,158,11,.3)",borderRadius:16,padding:15,marginBottom:18}}>
+                    <div style={{display:"flex",alignItems:"center",gap:11,marginBottom:12}}>
+                      <span style={{fontSize:30}}>{jobObj?.icon}</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{jobObj?.name}</div>
+                        <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)"}}>{fs$(jobObj?.pay||0)} every 2 weeks · {career.count||0} paid so far</div>
+                      </div>
+                      <button onClick={()=>setCareer(null)} style={{background:"transparent",border:"1px solid rgba(255,255,255,.18)",borderRadius:9,padding:"5px 8px",color:"rgba(255,255,255,.5)",fontSize:10,fontWeight:800,cursor:"pointer",flexShrink:0}}>Switch job</button>
+                    </div>
+                    {payDue
+                      ?<button onClick={collectPaycheck} style={{width:"100%",padding:14,borderRadius:13,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer",boxShadow:"0 6px 18px rgba(245,158,11,.4)"}}>💰 Collect my {fs$(jobObj?.pay||0)} paycheck!</button>
+                      :<div style={{textAlign:"center",padding:"10px",borderRadius:12,background:"rgba(255,255,255,.05)",fontSize:12,fontWeight:800,color:"rgba(255,255,255,.55)"}}>⏳ Next paycheck in {payInDays} day{payInDays===1?"":"s"} — come back then!</div>}
+                    <div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.45)",textAlign:"center",marginTop:9,lineHeight:1.5}}>This is money to <strong style={{color:"#fbbf24"}}>invest</strong> below 👇 — not to blow on quick trades.</div>
+                  </div>
+                </>)}
+
+                {/* ── STEP 2 · INVEST: Money Machine spends real cash into an ETF ── */}
+                <div style={{fontSize:13,fontWeight:800,color:"#60a5fa",marginBottom:9}}>📈 Step 2 · Auto-invest it</div>
                 {!active?(<>
-                  <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:9}}>1. Pick a basket to invest in 🧺</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",marginBottom:9}}>Pick a basket of companies (an ETF) 🧺</div>
                   <div style={{display:"flex",gap:9,marginBottom:16}}>
                     {ETFS.map(e=>(
                       <button key={e.ticker} onClick={()=>setInvPickEtf(e.ticker)} style={{flex:1,padding:"13px 10px",borderRadius:13,border:`2px solid ${invPickEtf===e.ticker?"rgba(59,130,246,.6)":"rgba(255,255,255,.14)"}`,background:invPickEtf===e.ticker?"rgba(59,130,246,.16)":"rgba(255,255,255,.05)",color:"#fff",cursor:"pointer",textAlign:"left"}}>
@@ -3219,30 +3299,32 @@ function KidDash({user,savedState,onLogout}){
                       </button>
                     ))}
                   </div>
-                  <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:9}}>2. How much each payday? 💵</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.55)",marginBottom:9}}>How much of your cash each payday? 💵</div>
                   <div style={{display:"flex",gap:8,marginBottom:18}}>
                     {[10,25,50].map(a=>(
                       <button key={a} onClick={()=>setInvPickAmt(a)} style={{flex:1,padding:"11px",borderRadius:12,border:`1.5px solid ${invPickAmt===a?"rgba(16,185,129,.6)":"rgba(255,255,255,.14)"}`,background:invPickAmt===a?"rgba(16,185,129,.16)":"transparent",color:invPickAmt===a?"#86efac":"rgba(255,255,255,.6)",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer"}}>${a}</button>
                     ))}
                   </div>
                   <button onClick={()=>startPlan(invPickEtf,invPickAmt)} style={{width:"100%",padding:15,borderRadius:15,border:"none",background:"linear-gradient(135deg,#3b82f6,#2563eb)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer",boxShadow:"0 6px 20px rgba(59,130,246,.4)"}}>🏦 Start my Money Machine!</button>
-                  <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.4)",textAlign:"center",marginTop:10,lineHeight:1.5}}>It invests for you once a day. Turn it off anytime.</div>
+                  <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.4)",textAlign:"center",marginTop:10,lineHeight:1.5}}>It moves that much of your cash into your ETF every 2 weeks. Turn it off anytime.</div>
                 </>):(<>
                   <div style={{background:"rgba(59,130,246,.1)",border:"1px solid rgba(59,130,246,.3)",borderRadius:16,padding:16,marginBottom:16}}>
                     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
                       <span style={{fontSize:30}}>{planEtf?.icon}</span>
-                      <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{fs$(autoInvest.amount)} → {planEtf?.name} daily</div><div style={{fontSize:11,fontWeight:700,color:"#86efac"}}>✅ Running · next payday tomorrow</div></div>
+                      <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{fs$(autoInvest.amount)} → {planEtf?.name} every 2 wks</div><div style={{fontSize:11,fontWeight:700,color:"#86efac"}}>✅ Running · spends your cash automatically</div></div>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
                       {[["🏦 Invested",fs$(autoInvest.totalInvested||0)],["📈 Now worth",fs$(holdVal)],["📅 Paydays",`${autoInvest.paydays||0}`]].map(([l,v])=>(
                         <div key={l} style={{background:"rgba(255,255,255,.05)",borderRadius:10,padding:"9px 8px",textAlign:"center"}}><div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)"}}>{l}</div><div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{v}</div></div>
                       ))}
                     </div>
+                    <div style={{marginTop:11,background:"rgba(16,185,129,.1)",border:"1px solid rgba(16,185,129,.25)",borderRadius:11,padding:"9px 11px",fontSize:11,fontWeight:700,color:"#86efac",lineHeight:1.5}}>🔒 This is a <strong>long-term</strong> investment. We hold it to grow — selling it early to trade breaks the magic! 🌱</div>
                     <button onClick={stopPlan} style={{width:"100%",marginTop:12,padding:10,borderRadius:11,border:"1px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.55)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer"}}>Pause my Money Machine</button>
                   </div>
                 </>)}
 
                 {/* Time Machine */}
+                <div style={{fontSize:13,fontWeight:800,color:"#86efac",marginBottom:9,marginTop:4}}>🌳 Step 3 · Watch it grow</div>
                 <div style={{background:"linear-gradient(135deg,rgba(124,58,237,.14),rgba(245,158,11,.06))",border:"1px solid rgba(124,58,237,.3)",borderRadius:16,padding:16,marginTop:4}}>
                   <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>⏩ Time Machine</div>
                   <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,marginBottom:12}}>If you keep investing <strong style={{color:"#fff"}}>{fs$(monthly)} a month</strong> and let it grow (~7% a year, like the real stock market)…</div>
