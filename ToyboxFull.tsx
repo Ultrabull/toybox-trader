@@ -836,7 +836,8 @@ export default function ToyboxApp() {
       try{
         const st=await loadData(stateKey(kidId));
         if(st){
-          const base=1000+Math.max(0,Number(gain)||0);
+          const lessonBonus=(st.doneLesson||[]).length>=LESSONS.length?75:0;   // finished all lessons
+          const base=1000+Math.max(0,Number(gain)||0)+lessonBonus;
           await saveData(stateKey(kidId),{...st,cash:base,portfolio:[],trades:[],pendingOrders:[],lastValue:base});
         }
       }catch(e){}
@@ -4396,7 +4397,9 @@ function ParentDash({kids,onResetKid,onLogout}){
               {confirmReset.mode==="remove"
                 ?<>This deletes the account and all progress from this device. They'll need to create a new account (or restore from a backup code).<br/><br/><strong style={{color:"#fca5a5"}}>This can't be undone</strong> unless you have a backup code.</>
                 :confirmReset.mode==="money"
-                ?<>Clears holdings & trades and sets their Money Garden to <strong style={{color:"#86efac"}}>${(1000+resetGain).toLocaleString()}</strong>{resetGain>0?<> (a <strong style={{color:"#86efac"}}>+${resetGain}</strong> head start 🌱)</>:<> (fresh start)</>}, but <strong style={{color:"#86efac"}}>keeps their lessons, badges and coins</strong>.</>
+                ?(()=>{const lb=(kidStates[confirmReset.kid.id]?.doneLesson?.length>=LESSONS.length)?75:0;const total=1000+resetGain+lb;const parts=[resetGain>0?`+$${resetGain} head start`:"",lb>0?`+$${lb} for finishing lessons`:""].filter(Boolean);return(
+                  <>Clears holdings & trades and sets their Money Garden to <strong style={{color:"#86efac"}}>${total.toLocaleString()}</strong>{parts.length?<> ({parts.join(" · ")} 🌱)</>:<> (fresh start)</>}, but <strong style={{color:"#86efac"}}>keeps their lessons, badges and coins</strong>.</>
+                );})()
                 :<>This wipes their portfolio, lessons, badges and trades. They'll start fresh with $1,000. The account stays.<br/><br/><strong style={{color:"#fca5a5"}}>This can't be undone</strong> unless you have a backup code.</>}
             </div>
             {confirmReset.mode==="money"&&(
