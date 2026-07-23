@@ -101,6 +101,9 @@ const readBackupCode = (code) => {
 const f$  = n => `$${Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const fs$ = n => n>=1000 ? `$${(n/1000).toFixed(1)}k` : `$${Number(n).toFixed(2)}`;
 const pct = (a,b) => (((a-b)/b)*100).toFixed(1);
+// Tidy a share/token quantity: whole numbers plain, fractions to ≤4 decimals
+// (no more 0.08141615392763166 — that's a float, not something a kid reads).
+const fmtQty = q => Number.isInteger(q) ? String(q) : parseFloat(Number(q).toFixed(4)).toString();
 const toRobux = d => Math.round(d*10).toLocaleString();
 
 // ─── Market data ───────────────────────────────────
@@ -2810,7 +2813,7 @@ function KidDash({user,savedState,onLogout}){
                   return(
                     <div key={h.ticker} style={{borderRadius:14,padding:16,marginBottom:12,background:`linear-gradient(135deg,${h.color}bb,${h.color}44)`,border:`1px solid ${h.color}44`}}>
                       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><span style={{fontSize:32}}>{h.icon}</span><div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{h.name}</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700}}>{h.type==="stock"?"Building Block":"Collector Card"}</div></div><div style={{textAlign:"right"}}><div style={{fontFamily:"var(--fd)",fontSize:18,color:pnl>=0?"#86efac":"#fca5a5"}}>{pnl>=0?"+":""}{f$(pnl)}</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700}}>{pp>=0?"+":""}{pp}%</div></div></div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>{[["Qty",h.type==="crypto"?h.qty.toFixed(3):h.qty],["Bought at",fs$(h.avgCost)],["Now worth",fs$(cur)]].map(([k,v])=><div key={k}><div style={{fontSize:9,color:"rgba(255,255,255,.4)",fontWeight:800,textTransform:"uppercase"}}>{k}</div><div style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,.9)",marginTop:2}}>{v}</div></div>)}</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>{[["Qty",fmtQty(h.qty)],["Buy price",fs$(h.avgCost)],["Price now",fs$(cur)]].map(([k,v])=><div key={k}><div style={{fontSize:9,color:"rgba(255,255,255,.4)",fontWeight:800,textTransform:"uppercase"}}>{k}</div><div style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,.9)",marginTop:2}}>{v}</div></div>)}</div>
                       <div style={{fontSize:11,fontWeight:700,background:"rgba(255,255,255,.1)",borderRadius:9,padding:"8px 10px",color:"rgba(255,255,255,.8)",marginBottom:10,lineHeight:1.4}}>{advice}</div>
                       <div style={{display:"flex",gap:8}}><button onClick={()=>a&&openTrade(a,"buy")} style={{flex:1,padding:"9px",borderRadius:9,border:"none",background:"rgba(16,185,129,.3)",color:"#86efac",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>+ Buy more</button><button onClick={()=>a&&openTrade(a,"sell")} style={{flex:1,padding:"9px",borderRadius:9,border:"none",background:"rgba(239,68,68,.3)",color:"#fca5a5",fontFamily:"var(--fd)",fontSize:12,cursor:"pointer"}}>− Sell</button></div>
                     </div>
@@ -3148,7 +3151,7 @@ function KidDash({user,savedState,onLogout}){
                         <span style={{fontSize:26}}>{o.icon}</span>
                         <div style={{flex:1}}>
                           <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{o.side==="buy"?"🟢 Buy":"🔴 Sell"} {o.name}</div>
-                          <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.45)"}}>{o.kind==="limit"?"🎯 Limit order":"⏰ Queued for open"} · {o.qty<1?o.qty.toFixed(3):o.qty} {o.type==="crypto"?"tokens":"shares"} · placed {o.placed}</div>
+                          <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.45)"}}>{o.kind==="limit"?"🎯 Limit order":"⏰ Queued for open"} · {fmtQty(o.qty)} {o.type==="crypto"?"tokens":"shares"} · placed {o.placed}</div>
                         </div>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -3216,7 +3219,7 @@ function KidDash({user,savedState,onLogout}){
                       <div style={{width:36,height:36,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0,background:t.side==="BUY"?"rgba(6,182,212,.15)":"rgba(245,158,11,.15)"}}>{t.icon}</div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontWeight:800,fontSize:13,color:"#fff"}}>{t.name}</div>
-                        <div style={{fontSize:10,color:"rgba(255,255,255,.45)",fontWeight:600}}>{t.date} at {t.time} · {t.qty<1?t.qty.toFixed(3):t.qty} @ {fs$(t.price)}</div>
+                        <div style={{fontSize:10,color:"rgba(255,255,255,.45)",fontWeight:600}}>{t.date} at {t.time} · {fmtQty(t.qty)} @ {fs$(t.price)}</div>
                       </div>
                       <div style={{textAlign:"right",flexShrink:0}}>
                         <div style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:100,marginBottom:3,display:"inline-block",background:t.side==="BUY"?"rgba(6,182,212,.15)":"rgba(245,158,11,.15)",color:t.side==="BUY"?"#67e8f9":"#fde68a"}}>{t.side==="BUY"?"🟢 BUY":"🔴 SELL"}</div>
