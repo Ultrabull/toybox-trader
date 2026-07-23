@@ -394,18 +394,21 @@ const LESSONS = [
 // the ladder from lowest to highest, and each promotion means bigger pay AND
 // bigger bills — but more left over to invest. Two lessons baked in:
 //   1) more school/skill → more pay      2) bills come first, then invest.
+// Pay is GROSS. Real life: tax comes out first (higher earners pay a higher
+// rate — a gentle tax-bracket lesson), THEN bills, and what's left is savings.
 const JOBS = [
-  {id:"food",     icon:"🍔",  name:"Fast-Food Crew", pay:100, bills:{Home:35,Food:20,Phone:15},          school:"First job — no experience needed"},
-  {id:"cashier",  icon:"🛒",  name:"Store Cashier",  pay:140, bills:{Home:45,Food:25,Phone:15,Other:10}, school:"A little on-the-job training"},
-  {id:"police",   icon:"👮",  name:"Police Officer", pay:200, bills:{Home:65,Food:35,Phone:20,Other:15}, school:"Police academy"},
-  {id:"teacher",  icon:"🧑‍🏫", name:"Teacher",        pay:240, bills:{Home:80,Food:40,Phone:20,Other:20}, school:"4 years of college"},
-  {id:"engineer", icon:"👷",  name:"Engineer",       pay:320, bills:{Home:105,Food:50,Phone:25,Other:30},school:"College + lots of math"},
-  {id:"business", icon:"💼",  name:"Business Owner",  pay:420, bills:{Home:140,Food:65,Phone:30,Other:45},school:"Runs their own company"},
-  {id:"doctor",   icon:"🩺",  name:"Doctor",         pay:560, bills:{Home:190,Food:85,Phone:35,Other:60},school:"10+ years of school"},
+  {id:"food",     icon:"🍔",  name:"Fast-Food Crew", pay:120, tax:0.10, bills:{Home:35,Food:20,Phone:15},          school:"First job — no experience needed"},
+  {id:"cashier",  icon:"🛒",  name:"Store Cashier",  pay:165, tax:0.10, bills:{Home:45,Food:25,Phone:15,Other:10}, school:"A little on-the-job training"},
+  {id:"police",   icon:"👮",  name:"Police Officer", pay:240, tax:0.12, bills:{Home:65,Food:35,Phone:20,Other:15}, school:"Police academy"},
+  {id:"teacher",  icon:"🧑‍🏫", name:"Teacher",        pay:290, tax:0.12, bills:{Home:80,Food:40,Phone:20,Other:20}, school:"4 years of college"},
+  {id:"engineer", icon:"👷",  name:"Engineer",       pay:400, tax:0.15, bills:{Home:105,Food:50,Phone:25,Other:30},school:"College + lots of math"},
+  {id:"business", icon:"💼",  name:"Business Owner",  pay:540, tax:0.18, bills:{Home:140,Food:65,Phone:30,Other:45},school:"Runs their own company"},
+  {id:"doctor",   icon:"🩺",  name:"Doctor",         pay:740, tax:0.20, bills:{Home:190,Food:85,Phone:35,Other:60},school:"10+ years of school"},
 ];
 const BILL_ICON = {Home:"🏠",Food:"🍎",Phone:"📱",Other:"🚌"};
+const jobTax   = (j) => Math.round(j.pay * (j.tax||0));               // tax taken out first
 const jobBills = (j) => Object.values(j.bills).reduce((a,b)=>a+b,0);   // total bills
-const jobSave  = (j) => j.pay - jobBills(j);                          // left to invest each payday
+const jobSave  = (j) => j.pay - jobTax(j) - jobBills(j);              // left to invest each payday
 // Promotions get HARDER as you climb — later jobs need more paychecks invested.
 // Indexed by current jobIndex (0=food→cashier … 5=business→doctor).
 const PROMO_REQ = [2, 2, 3, 3, 4, 4];
@@ -422,7 +425,7 @@ const LIFE_EVENTS = [
   {emoji:"👟", text:"Outgrew your shoes!"},
 ];
 // Old saves stored {job:'doctor',...}; new shape is index-based. Reset those.
-const freshCareer = () => ({jobIndex:0, period:0, investsAtJob:0, awaitingInvest:false, awaitingAmt:0, lastEvent:null, totalSaved:0});
+const freshCareer = () => ({jobIndex:0, period:0, investsAtJob:0, awaitingInvest:false, awaitingAmt:0, lastEvent:null, emergency:0, totalSaved:0});
 const migrateCareer = (c) => (c && typeof c.jobIndex==="number") ? c : freshCareer();
 
 // ─── Challenge Rounds: a harder "Round 2" for each finished lesson ──────────
@@ -1698,8 +1701,9 @@ function KidDash({user,savedState,onLogout}){
   const ETFS = MARKET.filter(m=>m.cat==="etf");
   const curJob   = JOBS[career.jobIndex] || JOBS[0];
   const nextJob  = JOBS[career.jobIndex+1] || null;      // null = top of the ladder
+  const curTax   = jobTax(curJob);
   const curBills = jobBills(curJob);
-  const curSave  = jobSave(curJob);                      // paycheck minus bills = what you can invest
+  const curSave  = jobSave(curJob);                      // paycheck minus tax & bills = what you can invest
   const chosenEtf = autoInvest?.etf || invPickEtf;       // which ETF savings go into
 
   // 1) Collect a paycheck. Bills come out first (you have to pay them!), a
@@ -1712,16 +1716,32 @@ function KidDash({user,savedState,onLogout}){
       const e = LIFE_EVENTS[Math.floor(Math.random()*LIFE_EVENTS.length)];
       ev = {...e, cost: Math.max(5, Math.round(curSave*(0.3 + Math.random()*0.4)))};   // 30–70% of savings
     }
-    const kept = ev ? Math.max(0, curSave-ev.cost) : curSave;
-    setCash(c=>c+kept);                                  // net savings after bills (and any surprise)
+    // A surprise is paid from the emergency fund first; only the uncovered
+    // remainder eats into this payday's savings.
+    const fund      = career.emergency||0;
+    const covered   = ev ? Math.min(fund, ev.cost) : 0;
+    const remainder = ev ? ev.cost-covered : 0;
+    const kept = Math.max(0, curSave-remainder);
+    setCash(c=>c+kept);                                  // net savings after tax, bills (and any uncovered surprise)
     setCoins(c=>c+10); setXp(x=>x+20); fx("reward",25);
     setInvAmt(null);
-    setCareer(cur=>({...cur, period:(cur.period||0)+1, awaitingInvest:true, awaitingAmt:kept, lastEvent:ev, totalSaved:(cur.totalSaved||0)+kept}));
+    setCareer(cur=>({...cur, period:(cur.period||0)+1, awaitingInvest:true, awaitingAmt:kept, lastEvent: ev?{...ev,covered,remainder}:null, emergency:(cur.emergency||0)-covered, totalSaved:(cur.totalSaved||0)+kept}));
     if(ev){
-      setTaskCelebrate({emoji:ev.emoji,title:`😮 Surprise! ${ev.text}`,label:`Life happens! It cost ${fs$(ev.cost)}, so this payday you kept ${fs$(kept)} instead of ${fs$(curSave)}. THIS is why grown-ups keep an emergency fund — surprises come when you least expect them. Invest what's left 👇`});
+      if(covered>=ev.cost)      setTaskCelebrate({emoji:"🛟",title:"Emergency fund to the rescue!",label:`${ev.emoji} ${ev.text} cost ${fs$(ev.cost)} — but your emergency fund covered ALL of it, so your savings are safe! THIS is why you build a fund. 💪`});
+      else if(covered>0)        setTaskCelebrate({emoji:ev.emoji,title:`😮 Surprise! ${ev.text}`,label:`It cost ${fs$(ev.cost)}. Your emergency fund covered ${fs$(covered)}, so only ${fs$(remainder)} came out of savings. See how the fund helps? Build it up more! 🛟`});
+      else                      setTaskCelebrate({emoji:ev.emoji,title:`😮 Surprise! ${ev.text}`,label:`It cost ${fs$(ev.cost)} and you had no emergency fund, so it came out of savings — you kept ${fs$(kept)}. Start a fund 🛟 so next time you're covered!`});
     } else {
-      setTaskCelebrate({emoji:curJob.icon,title:`💰 Payday!  +${fs$(kept)} to save`,label:`Your ${curJob.name} paycheck was ${fs$(curJob.pay)}. Bills took ${fs$(curBills)} (rent, food, phone — grown-up life!). You kept ${fs$(kept)} to invest 👇`});
+      setTaskCelebrate({emoji:curJob.icon,title:`💰 Payday!  +${fs$(kept)} to save`,label:`${curJob.name} paycheck: ${fs$(curJob.pay)}. Tax took ${fs$(curTax)}, bills took ${fs$(curBills)} — grown-up life! You kept ${fs$(kept)} to invest 👇`});
     }
+  };
+
+  // Build the emergency fund — money set safely aside (from cash) to absorb
+  // future surprises. Doesn't grow like investing, but keeps curveballs from
+  // hurting. A real trade-off: safety now vs. growth later.
+  const addEmergency = (amtWanted) => {
+    const amt=Math.min(Math.max(1,Math.round(amtWanted||0)), Math.floor(cash));
+    if(amt<1){ setTaskCelebrate({emoji:"💸",title:"No cash to set aside",label:"Collect a paycheck first, then move a little into your emergency fund."}); return; }
+    setCash(c=>c-amt); setCareer(cur=>({...cur, emergency:(cur.emergency||0)+amt})); setCoins(c=>c+3); fx("coin",12);
   };
 
   // 2) Invest your savings into the chosen ETF. Any amount > 0 handles this
@@ -3437,17 +3457,19 @@ function KidDash({user,savedState,onLogout}){
                 <div style={{fontSize:13,fontWeight:800,color:"#fbbf24",marginBottom:9}}>💼 Step 1 · Payday &amp; bills</div>
                 {!career.awaitingInvest?(
                   <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.14),rgba(245,158,11,.05))",border:"1px solid rgba(245,158,11,.3)",borderRadius:16,padding:15,marginBottom:18}}>
-                    <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",textAlign:"center",marginBottom:11,lineHeight:1.5}}>Time to get paid! Your {curJob.name} paycheck is <strong style={{color:"#fff"}}>{fs$(curJob.pay)}</strong>, but bills take <strong style={{color:"#fca5a5"}}>{fs$(curBills)}</strong> first — you'll keep <strong style={{color:"#86efac"}}>{fs$(curSave)}</strong> to invest.</div>
+                    <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",textAlign:"center",marginBottom:11,lineHeight:1.5}}>Time to get paid! Your {curJob.name} paycheck is <strong style={{color:"#fff"}}>{fs$(curJob.pay)}</strong>, but tax takes <strong style={{color:"#fca5a5"}}>{fs$(curTax)}</strong> and bills take <strong style={{color:"#fca5a5"}}>{fs$(curBills)}</strong> — you'll keep <strong style={{color:"#86efac"}}>{fs$(curSave)}</strong> to invest.</div>
                     <button onClick={collectPaycheck} style={{width:"100%",padding:14,borderRadius:13,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer",boxShadow:"0 6px 18px rgba(245,158,11,.4)"}}>💰 Collect payday #{(career.period||0)+1}</button>
                   </div>
                 ):(
                   <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:15,marginBottom:18}}>
                     <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.5)",marginBottom:8}}>🧾 YOUR BUDGET THIS PAYDAY</div>
                     <div style={{display:"flex",justifyContent:"space-between",fontFamily:"var(--fd)",fontSize:15,color:"#86efac",marginBottom:6}}><span>{curJob.icon} Paycheck</span><span>+{fs$(curJob.pay)}</span></div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,.6)",marginBottom:4}}><span>🏛️ Tax</span><span style={{color:"#fca5a5"}}>−{fs$(curTax)}</span></div>
                     {billRows.map(([k,v])=>(
                       <div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,.6)",marginBottom:4}}><span>{BILL_ICON[k]||"•"} {k==="Other"?"Getting around & fun":k==="Home"?"Home (rent)":k}</span><span style={{color:"#fca5a5"}}>−{fs$(v)}</span></div>
                     ))}
-                    {ev&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,fontWeight:800,color:"#fca5a5",marginBottom:4,background:"rgba(239,68,68,.12)",borderRadius:8,padding:"5px 8px"}}><span>{ev.emoji} {ev.text} <span style={{fontSize:9,opacity:.8}}>SURPRISE!</span></span><span>−{fs$(ev.cost)}</span></div>}
+                    {ev&&ev.covered>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,fontWeight:800,color:"#86efac",marginBottom:4,background:"rgba(16,185,129,.12)",borderRadius:8,padding:"5px 8px"}}><span>🛟 {ev.text} <span style={{fontSize:9,opacity:.8}}>fund paid {fs$(ev.covered)}!</span></span><span>{ev.remainder>0?`−${fs$(ev.remainder)}`:"$0"}</span></div>}
+                    {ev&&!ev.covered&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,fontWeight:800,color:"#fca5a5",marginBottom:4,background:"rgba(239,68,68,.12)",borderRadius:8,padding:"5px 8px"}}><span>{ev.emoji} {ev.text} <span style={{fontSize:9,opacity:.8}}>SURPRISE!</span></span><span>−{fs$(ev.cost)}</span></div>}
                     <div style={{height:1,background:"rgba(255,255,255,.12)",margin:"9px 0"}}/>
                     <div style={{display:"flex",justifyContent:"space-between",fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}><span>🐷 Left to invest</span><span style={{color:"#86efac"}}>{fs$(saveAmt)}</span></div>
                     <div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.45)",textAlign:"center",marginTop:9,lineHeight:1.5}}>{ev?"A surprise ate into your savings — that's why an emergency fund matters! Invest what's left 👇":"Bills always come first (needs!). Now invest your savings below 👇"}</div>
@@ -3490,6 +3512,21 @@ function KidDash({user,savedState,onLogout}){
                 ):(
                   <div style={{textAlign:"center",padding:"12px",borderRadius:12,background:"rgba(255,255,255,.04)",fontSize:12,fontWeight:800,color:"rgba(255,255,255,.5)",marginBottom:18}}>✅ This paycheck is handled. Collect your next payday above to invest more!</div>
                 )}
+
+                {/* ── EMERGENCY FUND — a safety net for surprises ── */}
+                <div style={{fontSize:13,fontWeight:800,color:"#fcd34d",marginBottom:9}}>🛟 Emergency fund</div>
+                <div style={{background:"rgba(252,211,77,.08)",border:"1px solid rgba(252,211,77,.28)",borderRadius:16,padding:15,marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                    <div style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,flex:1,paddingRight:10}}>Set a little aside for surprises. It doesn't grow like investing — but it covers curveballs so they don't hurt your savings.</div>
+                    <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)"}}>SAVED UP</div><div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fcd34d"}}>{fs$(career.emergency||0)}</div></div>
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    {[10,25].map(a=>(
+                      <button key={a} onClick={()=>addEmergency(a)} disabled={availCash<a} style={{flex:1,padding:"10px",borderRadius:11,border:`1.5px solid ${availCash<a?"rgba(255,255,255,.1)":"rgba(252,211,77,.4)"}`,background:availCash<a?"transparent":"rgba(252,211,77,.12)",color:availCash<a?"rgba(255,255,255,.3)":"#fcd34d",fontFamily:"var(--fd)",fontSize:14,cursor:availCash<a?"not-allowed":"pointer"}}>+ {fs$(a)}</button>
+                    ))}
+                  </div>
+                  <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:8}}>Grown-ups aim for a few months of bills saved. Every bit helps! 💛</div>
+                </div>
 
                 {/* ── PROMOTION TRACKER ── */}
                 {nextJob?(
