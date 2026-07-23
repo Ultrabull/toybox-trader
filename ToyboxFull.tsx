@@ -1766,6 +1766,12 @@ function KidDash({user,savedState,onLogout}){
     if(amt<1){ setTaskCelebrate({emoji:"💸",title:"No cash to set aside",label:"Collect a paycheck first, then move a little into your emergency fund."}); return; }
     setCash(c=>c-amt); setCareer(cur=>({...cur, emergency:(cur.emergency||0)+amt})); fx("coin",12);
   };
+  // Empty the emergency fund back into cash (resets it to $0, keeps the money).
+  const emptyEmergency = () => {
+    const amt=career.emergency||0; if(amt<1) return;
+    setCash(c=>c+amt); setCareer(cur=>({...cur, emergency:0})); fx("coin",12);
+    setTaskCelebrate({emoji:"🛟",title:"Emergency fund emptied",label:`Moved ${fs$(amt)} back into your cash. Your fund is $0 again — you can start building it back up whenever you like.`});
+  };
 
   // 2) Invest your savings into the chosen ETF. Any amount > 0 handles this
   //    paycheck and counts toward your next promotion. Buys real ETF shares.
@@ -3582,6 +3588,7 @@ function KidDash({user,savedState,onLogout}){
                     </div>
                   )}
                   <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:8}}>{full?"Nice — now put spare cash into investing to grow it! 🌱":"Grown-ups aim for ~3 months of bills saved. Every bit helps! 💛"}</div>
+                  {emNow>0&&<button onClick={emptyEmergency} style={{width:"100%",marginTop:10,padding:8,borderRadius:10,border:"1px solid rgba(255,255,255,.15)",background:"transparent",color:"rgba(255,255,255,.5)",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer"}}>↺ Move it all back to cash (reset to $0)</button>}
                 </div>
                   );
                 })()}
