@@ -1160,6 +1160,9 @@ function KidDash({user,savedState,onLogout}){
   const [orderType,   setOrderType]   = useState("market");                      // market | limit
   const [limitPrice,  setLimitPrice]  = useState(0);                             // target price for limit
   const [pendingOrders,setPending]    = useState(S.pendingOrders || []);         // queued/limit orders
+  const [autoInvest,  setAutoInvest]  = useState(S.autoInvest || null);          // Money Machine: {etf,amount,active,lastRun,totalInvested,paydays}
+  const [invPickEtf,  setInvPickEtf]  = useState("VOO");                         // Money Machine setup selections
+  const [invPickAmt,  setInvPickAmt]  = useState(25);
   const warnedOrders = useRef(new Set());  // orders we've already shown a "not enough cash" toast for
   const [lastBonusClaim,setLastBonusClaim] = useState(S.lastBonusClaim ?? null); // date daily bonus last claimed
   const [lastLessonAt, setLastLessonAt]    = useState(S.lastLessonAt ?? null);   // when a lesson was last completed (jackpot gate)
@@ -1292,9 +1295,9 @@ function KidDash({user,savedState,onLogout}){
   // AUTO-SAVE: persist all state whenever anything important changes
   useEffect(()=>{
     if(!hydrated||!user?.id) return;
-    const snapshot = {cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
+    const snapshot = {cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
     saveData(stateKey(user.id), snapshot);
-  },[cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,hydrated]);
+  },[cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,seenOrderHelp,buddy,hydrated]);
 
   // ── Check for newly-earned badges ──
   useEffect(()=>{
@@ -1388,7 +1391,7 @@ function KidDash({user,savedState,onLogout}){
     const account={id:user.id,name:user.name,avatar:user.avatar,age:user.age,email:user.email,pin:user.pin,theme:user.theme,joinedAt:user.joinedAt};
     // Mirror the auto-save snapshot exactly, so a restore brings back
     // EVERYTHING — pet buddy, equipped cosmetics, pending orders, token day.
-    const state={cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
+    const state={cash,coins,xp,tokens,tokenDay,portfolio,trades,streak,lastSpin,invCards,doneLesson,lessonDates,doneMission,predictions,clubPool,owned,equipAvatar,equipTheme,earnedBadges,goal,pendingOrders,autoInvest,seenOrderHelp,buddy,lastBonusClaim,lastLessonAt,tourDone,lastValue:totalValue,lastActive:Date.now()};
     const code=makeBackupCode(account,state);
     setBackupCode(code); setCopied(false); fx("reward",20);
   };
@@ -1557,6 +1560,39 @@ function KidDash({user,savedState,onLogout}){
 
   // Dismiss alert after 5s
   useEffect(()=>{if(!alertToast)return;const t=setTimeout(()=>setAlertToast(null),5000);return()=>clearTimeout(t);},[alertToast]);
+
+  // ── Money Machine: recurring auto-invest into an ETF (teaches DCA + long-term) ──
+  // Each "payday" (once per day) the plan gifts a set amount and invests it all
+  // into the chosen ETF, so the holding steadily grows — the long-term habit.
+  const ETFS = MARKET.filter(m=>m.cat==="etf");
+  const doPayday = (plan) => {
+    const asset=MARKET.find(m=>m.ticker===plan.etf); if(!asset) return plan;
+    const amt=Math.max(1,plan.amount||0);
+    const price=prices[asset.ticker]||asset.basePrice;
+    const qty=amt/price;
+    setPort(prev=>{ const h=prev.find(p=>p.ticker===asset.ticker); return h?prev.map(p=>p.ticker===asset.ticker?{...p,qty:p.qty+qty,avgCost:(p.avgCost*p.qty+price*qty)/(p.qty+qty)}:p):[...prev,{ticker:asset.ticker,name:asset.name,type:asset.type,qty,avgCost:price,icon:asset.icon,color:asset.color}]; });
+    const now=new Date();
+    setTrades(ts=>[{id:Date.now()+Math.random(),date:now.toLocaleDateString("en-US",{day:"numeric",month:"short"}),time:now.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),ticker:asset.ticker,name:asset.name,icon:asset.icon,side:"BUY",qty,price,total:amt,pnl:null,auto:true},...ts]);
+    setCoins(c=>c+10); setXp(x=>x+20);
+    setTaskCelebrate({emoji:"🏦",title:"💰 Payday!",label:`Your Money Machine auto-invested ${fs$(amt)} into ${asset.name}. Keep it up — this is how real wealth grows! 📈`});
+    return {...plan,lastRun:new Date().toDateString(),totalInvested:(plan.totalInvested||0)+amt,paydays:(plan.paydays||0)+1};
+  };
+  const startPlan = (etf,amount) => setAutoInvest(doPayday({etf,amount,active:true,lastRun:"",totalInvested:0,paydays:0}));
+  const stopPlan = () => setAutoInvest(a=>a?{...a,active:false}:a);
+  // Auto-run one payday per day when the plan is on (once per app open).
+  const paydayRan=useRef(false);
+  useEffect(()=>{
+    if(!hydrated||paydayRan.current) return; paydayRan.current=true;
+    const t=setTimeout(()=>{ if(autoInvest?.active && autoInvest.lastRun!==new Date().toDateString()) setAutoInvest(doPayday(autoInvest)); },2600);
+    return()=>clearTimeout(t);
+  },[hydrated]);
+  // Time Machine: project a value forward at ~7%/yr with monthly contributions.
+  const projectFuture = (years,principal,monthly) => {
+    const r=0.07, mr=r/12, months=years*12;
+    const fvP=principal*Math.pow(1+r,years);
+    const fvC=mr>0?monthly*((Math.pow(1+mr,months)-1)/mr):monthly*months;
+    return fvP+fvC;
+  };
 
   // ── Market status (refreshed each minute) ──
   const [mkt, setMkt] = useState(getMarketStatus());
@@ -2084,6 +2120,7 @@ function KidDash({user,savedState,onLogout}){
       {id:"Coach",   icon:"🦊",label:"Ask Toby"},
     ]},
     {title:"💰 Money & Tasks",items:[
+      {id:"Invest",  icon:"🏦",label:"Money Machine"},
       {id:"Tasks",   icon:"✅",label:"My Tasks"},
       ...(ttEnabled?[{id:"Together",icon:"💛",label:"Together"}]:[]),
       {id:"Shop",    icon:"🛍️",label:"Shop"},
@@ -3156,6 +3193,72 @@ function KidDash({user,savedState,onLogout}){
                 </div>
               </div>
             )}
+
+            {/* Money Machine — recurring auto-invest into an ETF + Time Machine */}
+            {moreView==="Invest"&&(()=>{
+              const active=autoInvest&&autoInvest.active;
+              const planEtf=active?MARKET.find(m=>m.ticker===autoInvest.etf):null;
+              const holdVal=active&&planEtf?(portfolio.find(h=>h.ticker===planEtf.ticker)?.qty||0)*(prices[planEtf.ticker]||planEtf.basePrice):0;
+              const monthly=active?autoInvest.amount:25;   // used for the Time Machine projection
+              return(
+              <div>
+                <div style={{background:"linear-gradient(135deg,rgba(59,130,246,.16),rgba(16,185,129,.08))",border:"1px solid rgba(59,130,246,.3)",borderRadius:"var(--rl)",padding:18,textAlign:"center",marginBottom:16}}>
+                  <div style={{fontSize:40,marginBottom:6}}>🏦</div>
+                  <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",marginBottom:6}}>Money Machine</div>
+                  <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.72)",lineHeight:1.6}}>Invest a little <strong style={{color:"#fff"}}>every day, automatically</strong>, into a whole basket of companies (an ETF). This is how grown-ups build real wealth — slow and steady! 🌱→🌳</div>
+                </div>
+
+                {!active?(<>
+                  <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:9}}>1. Pick a basket to invest in 🧺</div>
+                  <div style={{display:"flex",gap:9,marginBottom:16}}>
+                    {ETFS.map(e=>(
+                      <button key={e.ticker} onClick={()=>setInvPickEtf(e.ticker)} style={{flex:1,padding:"13px 10px",borderRadius:13,border:`2px solid ${invPickEtf===e.ticker?"rgba(59,130,246,.6)":"rgba(255,255,255,.14)"}`,background:invPickEtf===e.ticker?"rgba(59,130,246,.16)":"rgba(255,255,255,.05)",color:"#fff",cursor:"pointer",textAlign:"left"}}>
+                        <div style={{fontSize:22}}>{e.icon}</div>
+                        <div style={{fontFamily:"var(--fd)",fontSize:14,marginTop:3}}>{e.name}</div>
+                        <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.5)"}}>{e.ticker} · {fs$(prices[e.ticker]||e.basePrice)}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:9}}>2. How much each payday? 💵</div>
+                  <div style={{display:"flex",gap:8,marginBottom:18}}>
+                    {[10,25,50].map(a=>(
+                      <button key={a} onClick={()=>setInvPickAmt(a)} style={{flex:1,padding:"11px",borderRadius:12,border:`1.5px solid ${invPickAmt===a?"rgba(16,185,129,.6)":"rgba(255,255,255,.14)"}`,background:invPickAmt===a?"rgba(16,185,129,.16)":"transparent",color:invPickAmt===a?"#86efac":"rgba(255,255,255,.6)",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer"}}>${a}</button>
+                    ))}
+                  </div>
+                  <button onClick={()=>startPlan(invPickEtf,invPickAmt)} style={{width:"100%",padding:15,borderRadius:15,border:"none",background:"linear-gradient(135deg,#3b82f6,#2563eb)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer",boxShadow:"0 6px 20px rgba(59,130,246,.4)"}}>🏦 Start my Money Machine!</button>
+                  <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.4)",textAlign:"center",marginTop:10,lineHeight:1.5}}>It invests for you once a day. Turn it off anytime.</div>
+                </>):(<>
+                  <div style={{background:"rgba(59,130,246,.1)",border:"1px solid rgba(59,130,246,.3)",borderRadius:16,padding:16,marginBottom:16}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                      <span style={{fontSize:30}}>{planEtf?.icon}</span>
+                      <div style={{flex:1}}><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>{fs$(autoInvest.amount)} → {planEtf?.name} daily</div><div style={{fontSize:11,fontWeight:700,color:"#86efac"}}>✅ Running · next payday tomorrow</div></div>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                      {[["🏦 Invested",fs$(autoInvest.totalInvested||0)],["📈 Now worth",fs$(holdVal)],["📅 Paydays",`${autoInvest.paydays||0}`]].map(([l,v])=>(
+                        <div key={l} style={{background:"rgba(255,255,255,.05)",borderRadius:10,padding:"9px 8px",textAlign:"center"}}><div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.4)"}}>{l}</div><div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff"}}>{v}</div></div>
+                      ))}
+                    </div>
+                    <button onClick={stopPlan} style={{width:"100%",marginTop:12,padding:10,borderRadius:11,border:"1px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.55)",fontFamily:"var(--fb)",fontSize:12,fontWeight:800,cursor:"pointer"}}>Pause my Money Machine</button>
+                  </div>
+                </>)}
+
+                {/* Time Machine */}
+                <div style={{background:"linear-gradient(135deg,rgba(124,58,237,.14),rgba(245,158,11,.06))",border:"1px solid rgba(124,58,237,.3)",borderRadius:16,padding:16,marginTop:4}}>
+                  <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff",marginBottom:4}}>⏩ Time Machine</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",lineHeight:1.5,marginBottom:12}}>If you keep investing <strong style={{color:"#fff"}}>{fs$(monthly)} a month</strong> and let it grow (~7% a year, like the real stock market)…</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9}}>
+                    {[1,5,10,20].map(yr=>{const v=projectFuture(yr,totalValue,monthly);return(
+                      <div key={yr} style={{background:"rgba(255,255,255,.05)",borderRadius:12,padding:"11px 12px"}}>
+                        <div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.45)"}}>In {yr} year{yr>1?"s":""}</div>
+                        <div style={{fontFamily:"var(--fd)",fontSize:18,color:"#c4b5fd"}}>{fs$(v)}</div>
+                      </div>
+                    );})}
+                  </div>
+                  <div style={{fontSize:11,fontWeight:700,color:"#fde68a",textAlign:"center",marginTop:12,lineHeight:1.5}}>🌱 That's the magic of compound growth — patience makes small amounts HUGE!</div>
+                </div>
+              </div>
+              );
+            })()}
 
             {/* Ask Toby — kid-safe AI money coach (Toybox Plus) */}
             {moreView==="Coach"&&(
