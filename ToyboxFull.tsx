@@ -413,10 +413,10 @@ const JOBS = [
   {id:"nurse",    icon:"👩‍⚕️", name:"Nurse",              pay:410,  tax:0.15, school:"Nursing school"},
   {id:"engineer", icon:"👷",  name:"Engineer",           pay:480,  tax:0.15, school:"College + lots of math"},
   {id:"coder",    icon:"🧑‍💻", name:"Software Developer", pay:560,  tax:0.18, school:"Computer science + coding"},
-  {id:"business", icon:"💼",  name:"Business Owner",      pay:660,  tax:0.18, school:"Runs their own company"},
-  {id:"lawyer",   icon:"👩‍⚖️", name:"Lawyer",             pay:780,  tax:0.20, school:"College + law school"},
-  {id:"doctor",   icon:"🩺",  name:"Doctor",             pay:950,  tax:0.22, school:"10+ years of school"},
-  {id:"astronaut",icon:"🚀",  name:"Astronaut",          pay:1200, tax:0.24, school:"Top science + years of training"},
+  {id:"lawyer",   icon:"👩‍⚖️", name:"Lawyer",             pay:700,  tax:0.18, school:"College + law school"},
+  {id:"doctor",   icon:"🩺",  name:"Doctor",             pay:900,  tax:0.20, school:"10+ years of school"},
+  {id:"astronaut",icon:"🚀",  name:"Astronaut",          pay:1150, tax:0.22, school:"Top science + years of training"},
+  {id:"business", icon:"💼",  name:"Business Owner",      pay:1500, tax:0.25, school:"Runs their own company — the sky's the limit!"},
 ].map(j=>({...j, bills: billsFor(j.pay)}));
 const BILL_ICON = {Home:"🏠",Food:"🍎",Phone:"📱",Other:"🚌"};
 const jobTax   = (j) => Math.round(j.pay * (j.tax||0));               // tax taken out first
@@ -3585,7 +3585,7 @@ function KidDash({user,savedState,onLogout}){
                 ):(
                   <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.14),rgba(124,58,237,.08))",border:"1px solid rgba(245,158,11,.3)",borderRadius:16,padding:15,marginBottom:16,textAlign:"center"}}>
                     <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fde68a"}}>🏆 Top of the ladder!</div>
-                    <div style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,.6)",marginTop:4,lineHeight:1.5}}>You climbed from Fast-Food Crew to Doctor by investing every payday. Keep it up and watch your money grow! 🌳</div>
+                    <div style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,.6)",marginTop:4,lineHeight:1.5}}>You climbed all the way from Fast-Food Crew to Business Owner by investing every payday. Keep it up and watch your money grow! 🌳</div>
                   </div>
                 )}
 
