@@ -160,7 +160,7 @@ const MARKET = [
 ];
 // Approximate fallback prices — only shown if the live price feed is
 // unreachable. The /prices function overrides these with real quotes.
-const INIT_PRICES = {AAPL:250.00,RBLX:115.00,DIS:112.00,NVDA:175.00,BTC:100000,ETH:3500,VOO:500.00,QQQ:500.00,GLD:240.00,TLT:90.00,VXUS:65.00};
+const INIT_PRICES = {AAPL:332.00,RBLX:125.00,DIS:115.00,NVDA:185.00,BTC:110000,ETH:3800,VOO:686.00,QQQ:590.00,GLD:378.00,TLT:88.00,VXUS:68.00};
 // Trade-screen tabs. `minAge` gates the whole group; younger kids see a
 // friendly locked card instead of the tradable ones.
 const CATS = [
@@ -829,6 +829,19 @@ export default function ToyboxApp() {
 
   // Parent resets a kid's progress (or removes account entirely)
   const onResetKid = async (kidId, mode) => {
+    if(mode==="money"){
+      // Reset TRADING only — clean cash, no holdings/trades — but KEEP lessons,
+      // badges, coins and streak. Corrects bad play-money profit without erasing learning.
+      try{
+        const st=await loadData(stateKey(kidId));
+        if(st){
+          const lessonCash=(st.doneLesson||[]).reduce((s,id)=>s+(LESSONS.find(l=>l.id===id)?.cashReward||0),0);
+          const base=1000+lessonCash;
+          await saveData(stateKey(kidId),{...st,cash:base,portfolio:[],trades:[],pendingOrders:[],lastValue:base});
+        }
+      }catch(e){}
+      return;
+    }
     try { await window.storage.delete(stateKey(kidId), false); } catch(e) {}
     if(mode==="remove"){
       setKids(ks=>ks.filter(k=>k.id!==kidId));
@@ -1410,21 +1423,30 @@ function KidDash({user,savedState,onLogout}){
   // Fetching server-side avoids the CORS/proxy issues that made the old direct
   // browser calls fail. refPrice holds each asset's previous close so the % on
   // the cards is the real daily change, not a jump from a stale base price.
-  const [priceSource,setPriceSource]=useState("simulated");
-  const [refPrice,setRefPrice]=useState({});
-  const fetchRealPrices=async()=>{
+  // ── Practice market: a self-contained price simulation (no live data feed). ──
+  // Prices drift up AND down with a gentle random walk plus a slow "market mood"
+  // (good stretches and rough stretches), and a tiny long-term upward lean that
+  // rewards patience. Seeded from INIT_PRICES, clamped so nothing runs away, and
+  // persisted so prices continue smoothly across reloads (no more $240→$378 jumps).
+  const [refPrice,setRefPrice]=useState({...INIT_PRICES});   // day-open baseline for % change
+  const refPriceRef=useRef({...INIT_PRICES});
+  useEffect(()=>{ refPriceRef.current=refPrice; },[refPrice]);
+  const moodRef=useRef(0);
+  const SIM_KEY="toybox:sim:v2";
+  const simVol=(a)=>a.type==="crypto"?0.010:a.cat==="other"?0.003:a.cat==="etf"?0.004:0.006;  // per-tick volatility
+  useEffect(()=>{  // restore the saved market once, or seed a fresh one
+    const today=new Date().toDateString();
     try{
-      const r=await fetch(apiUrl("/api/prices"),{signal:AbortSignal.timeout(8000)});
-      if(!r.ok) throw new Error("http "+r.status);
-      const d=await r.json();
-      if(d?.prices&&Object.keys(d.prices).length){
-        setPrices(p=>({...p,...d.prices}));
-        if(d.prev&&Object.keys(d.prev).length) setRefPrice(rp=>({...rp,...d.prev}));
-        setPriceSource("live");
+      const s=JSON.parse(localStorage.getItem(SIM_KEY)||"null");
+      if(s&&s.prices){
+        setPrices(p=>({...p,...s.prices}));
+        setRefPrice(s.day===today&&s.ref?s.ref:{...s.prices});   // new day → fresh % baseline
+        moodRef.current=typeof s.mood==="number"?s.mood:0;
+      }else{
+        localStorage.setItem(SIM_KEY,JSON.stringify({prices:INIT_PRICES,ref:INIT_PRICES,day:today,mood:0}));
       }
-    }catch(e){setPriceSource("simulated");}
-  };
-  useEffect(()=>{fetchRealPrices();const id=setInterval(fetchRealPrices,60000);return()=>clearInterval(id);},[]);
+    }catch(e){}
+  },[]);
 
   // ── Chores & Rewards ──
   const refreshTasks = async () => {
@@ -1503,24 +1525,31 @@ function KidDash({user,savedState,onLogout}){
   const saveChoreGoal = (g) => { setChoreGoal(g); saveData(`toybox:choregoal:${user?.id}`, g); };
   const investCoins = (n) => { if(n<=0||n>coins) return; setCoins(c=>c-n); setCash(c=>c+n); fx("reward",20); setInvestOpen(false); setTaskCelebrate({emoji:"📈",title:`${n} coins → ${fs$(n)} trading cash!`,label:"Go to Trade to grow it into more!"}); };
 
-  // Neutral random-walk simulation between fetches (no fake upward drift)
+  // Move the practice market every few seconds: mood-biased random walk + a tiny
+  // upward lean, clamped so it can't run away, and persisted so it resumes cleanly.
   useEffect(()=>{
     const id=setInterval(()=>setPrices(p=>{
+      let mood=moodRef.current+(Math.random()-0.5)*0.14;
+      mood=Math.max(-1,Math.min(1,mood*0.98));   // slow-moving "market mood": good vs rough stretches
+      moodRef.current=mood;
       const n={...p};
       let triggered=null;
       MARKET.forEach(a=>{
-        const vol=a.type==="crypto"?0.006:0.002;
-        const move=(Math.random()-0.5)*2*vol;
-        const prev=n[a.ticker];
-        n[a.ticker]=Math.max(0.01,prev*(1+move));
-        const chg=(n[a.ticker]-prev)/prev*100;
+        const base=INIT_PRICES[a.ticker]||a.basePrice;
+        const move=0.00006 /*tiny long-term upward lean*/ + mood*0.0009 /*mood bias*/ + (Math.random()-0.5)*2*simVol(a);
+        const prev=n[a.ticker]??base;
+        let next=prev*(1+move);
+        next=Math.max(base*0.35,Math.min(base*3.5,next));   // clamp: never runs away or crashes to zero
+        n[a.ticker]=next;
+        const chg=(next-prev)/prev*100;
         if(Math.abs(chg)>1.0&&!triggered&&portfolio.find(h=>h.ticker===a.ticker)){
-          triggered={name:a.name,icon:a.icon,chg,cur:n[a.ticker]};
+          triggered={name:a.name,icon:a.icon,chg,cur:next};
         }
       });
       if(triggered) setAlertToast(triggered);
+      try{ localStorage.setItem(SIM_KEY,JSON.stringify({prices:n,ref:refPriceRef.current,day:new Date().toDateString(),mood:moodRef.current})); }catch(e){}
       return n;
-    }),3000);
+    }),4000);
     return()=>clearInterval(id);
   },[portfolio]);
 
@@ -1635,11 +1664,9 @@ function KidDash({user,savedState,onLogout}){
     for(const tk of tickers){
       const ord = open.find(o=>o.ticker===tk);
       const since = ord.placedAt || (Date.now()-86400000); // default 1 day back
-      try {
-        // Candles come from our own server function (reliable, no CORS/proxy)
-        const r = await fetch(apiUrl(`/api/prices?history=${tk}&since=${since}`),{signal:AbortSignal.timeout(8000)});
-        if(r.ok){ const d=await r.json(); if(Array.isArray(d.candles)&&d.candles.length) history[tk]=d.candles; }
-      } catch(e){ /* no history for this ticker — will fall through to live check */ }
+      // Practice market has no historical feed — pending orders fill live via
+      // matchPendingOrders when the simulated price crosses the target.
+      void since;
     }
 
     // Decide fills from history
@@ -2114,7 +2141,7 @@ function KidDash({user,savedState,onLogout}){
         <div className="tb-av">{avatar}</div>
         <div style={{flex:1,minWidth:0}}>
           <div className="tb-name">Hey, {user?.name}! 👋</div>
-          <div className="tb-sub">Lv{lv} · {mkt.open?"🟢 Mkt open":"🔴 Mkt closed"}{pendingOrders.length>0?` · ⏳${pendingOrders.length}`:""} · {priceSource==="live"?"Live":"Sim"}</div>
+          <div className="tb-sub">Lv{lv} · {mkt.open?"🟢 Mkt open":"🔴 Mkt closed"}{pendingOrders.length>0?` · ⏳${pendingOrders.length}`:""} · 🎮 Practice</div>
         </div>
         <div className="tb-right">
           <div className="tb-chip fire">🔥 {streak}d</div>
@@ -3989,8 +4016,9 @@ function ParentDash({kids,onResetKid,onLogout}){
                       ))}
                       {/* Parent controls */}
                       <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.08)",display:"flex",gap:8}}>
-                        <button onClick={()=>setConfirmReset({kid:k,mode:"reset"})} style={{flex:1,padding:"9px",borderRadius:10,border:"1px solid rgba(245,158,11,.3)",background:"rgba(245,158,11,.1)",color:"#fde68a",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer"}}>🔄 Reset progress</button>
-                        <button onClick={()=>setConfirmReset({kid:k,mode:"remove"})} style={{flex:1,padding:"9px",borderRadius:10,border:"1px solid rgba(239,68,68,.3)",background:"rgba(239,68,68,.1)",color:"#fca5a5",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer"}}>🗑️ Remove account</button>
+                        <button onClick={()=>setConfirmReset({kid:k,mode:"money"})} style={{flex:1,padding:"9px 4px",borderRadius:10,border:"1px solid rgba(16,185,129,.35)",background:"rgba(16,185,129,.12)",color:"#86efac",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer",lineHeight:1.25}}>💵 Reset money</button>
+                        <button onClick={()=>setConfirmReset({kid:k,mode:"reset"})} style={{flex:1,padding:"9px 4px",borderRadius:10,border:"1px solid rgba(245,158,11,.3)",background:"rgba(245,158,11,.1)",color:"#fde68a",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer",lineHeight:1.25}}>🔄 Reset all</button>
+                        <button onClick={()=>setConfirmReset({kid:k,mode:"remove"})} style={{flex:1,padding:"9px 4px",borderRadius:10,border:"1px solid rgba(239,68,68,.3)",background:"rgba(239,68,68,.1)",color:"#fca5a5",fontFamily:"var(--fb)",fontSize:11,fontWeight:800,cursor:"pointer",lineHeight:1.25}}>🗑️ Remove</button>
                       </div>
                     </div>
                   );
@@ -4359,19 +4387,20 @@ function ParentDash({kids,onResetKid,onLogout}){
       {confirmReset&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setConfirmReset(null)}>
           <div style={{background:"#111827",border:"1px solid rgba(239,68,68,.3)",borderRadius:20,padding:24,maxWidth:380,width:"100%"}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontSize:40,textAlign:"center",marginBottom:10}}>{confirmReset.mode==="remove"?"🗑️":"🔄"}</div>
+            <div style={{fontSize:40,textAlign:"center",marginBottom:10}}>{confirmReset.mode==="remove"?"🗑️":confirmReset.mode==="money"?"💵":"🔄"}</div>
             <div style={{fontFamily:"var(--fd)",fontSize:19,color:"#fff",textAlign:"center",marginBottom:10}}>
-              {confirmReset.mode==="remove"?`Remove ${confirmReset.kid.name}'s account?`:`Reset ${confirmReset.kid.name}'s progress?`}
+              {confirmReset.mode==="remove"?`Remove ${confirmReset.kid.name}'s account?`:confirmReset.mode==="money"?`Reset ${confirmReset.kid.name}'s trading money?`:`Reset ${confirmReset.kid.name}'s progress?`}
             </div>
             <div style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,.65)",textAlign:"center",lineHeight:1.6,marginBottom:18}}>
               {confirmReset.mode==="remove"
-                ?"This deletes the account and all progress from this device. They'll need to create a new account (or restore from a backup code)."
-                :`This wipes their portfolio, lessons, badges and trades. They'll start fresh with $1,000. The account stays.`}
-              <br/><br/><strong style={{color:"#fca5a5"}}>This can't be undone</strong> unless you have a backup code.
+                ?<>This deletes the account and all progress from this device. They'll need to create a new account (or restore from a backup code).<br/><br/><strong style={{color:"#fca5a5"}}>This can't be undone</strong> unless you have a backup code.</>
+                :confirmReset.mode==="money"
+                ?<>Clears their play cash, holdings and trades back to a clean start, but <strong style={{color:"#86efac"}}>keeps their lessons, badges and coins</strong>. Use this to fix bad play-money profit. 👍</>
+                :<>This wipes their portfolio, lessons, badges and trades. They'll start fresh with $1,000. The account stays.<br/><br/><strong style={{color:"#fca5a5"}}>This can't be undone</strong> unless you have a backup code.</>}
             </div>
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setConfirmReset(null)} style={{flex:1,padding:"13px",borderRadius:13,border:"1.5px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.7)",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>Cancel</button>
-              <button onClick={()=>{onResetKid(confirmReset.kid.id,confirmReset.mode);setKidStates(s=>{const n={...s};delete n[confirmReset.kid.id];return n;});setConfirmReset(null);}} style={{flex:1,padding:"13px",borderRadius:13,border:"none",background:"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>{confirmReset.mode==="remove"?"Remove":"Reset"}</button>
+              <button onClick={async()=>{const kid=confirmReset.kid;const mode=confirmReset.mode;setConfirmReset(null);await onResetKid(kid.id,mode);if(mode==="money"){const st=await loadData(stateKey(kid.id));setKidStates(s=>({...s,[kid.id]:st}));}else{setKidStates(s=>{const n={...s};delete n[kid.id];return n;});}}} style={{flex:1,padding:"13px",borderRadius:13,border:"none",background:confirmReset.mode==="money"?"linear-gradient(135deg,#10b981,#059669)":"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>{confirmReset.mode==="remove"?"Remove":confirmReset.mode==="money"?"Reset money":"Reset all"}</button>
             </div>
           </div>
         </div>
