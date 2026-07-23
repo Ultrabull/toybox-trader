@@ -396,23 +396,35 @@ const LESSONS = [
 //   1) more school/skill → more pay      2) bills come first, then invest.
 // Pay is GROSS. Real life: tax comes out first (higher earners pay a higher
 // rate — a gentle tax-bracket lesson), THEN bills, and what's left is savings.
+// Bills are ~58% of pay, split into rent/food/phone/other, so a nicer job
+// means a nicer (pricier) life too — but always leaves more to invest.
+const billsFor = (pay) => {
+  const total=Math.round(pay*0.58);
+  const Home=Math.round(total*0.50), Food=Math.round(total*0.26), Phone=Math.round(total*0.11);
+  return {Home, Food, Phone, Other: total-Home-Food-Phone};
+};
 const JOBS = [
-  {id:"food",     icon:"🍔",  name:"Fast-Food Crew", pay:120, tax:0.10, bills:{Home:35,Food:20,Phone:15},          school:"First job — no experience needed"},
-  {id:"cashier",  icon:"🛒",  name:"Store Cashier",  pay:165, tax:0.10, bills:{Home:45,Food:25,Phone:15,Other:10}, school:"A little on-the-job training"},
-  {id:"police",   icon:"👮",  name:"Police Officer", pay:240, tax:0.12, bills:{Home:65,Food:35,Phone:20,Other:15}, school:"Police academy"},
-  {id:"teacher",  icon:"🧑‍🏫", name:"Teacher",        pay:290, tax:0.12, bills:{Home:80,Food:40,Phone:20,Other:20}, school:"4 years of college"},
-  {id:"engineer", icon:"👷",  name:"Engineer",       pay:400, tax:0.15, bills:{Home:105,Food:50,Phone:25,Other:30},school:"College + lots of math"},
-  {id:"business", icon:"💼",  name:"Business Owner",  pay:540, tax:0.18, bills:{Home:140,Food:65,Phone:30,Other:45},school:"Runs their own company"},
-  {id:"doctor",   icon:"🩺",  name:"Doctor",         pay:740, tax:0.20, bills:{Home:190,Food:85,Phone:35,Other:60},school:"10+ years of school"},
-];
+  {id:"food",     icon:"🍔",  name:"Fast-Food Crew",     pay:120,  tax:0.10, school:"First job — no experience needed"},
+  {id:"cashier",  icon:"🛒",  name:"Store Cashier",      pay:165,  tax:0.10, school:"A little on-the-job training"},
+  {id:"cook",     icon:"🧑‍🍳", name:"Cook",               pay:210,  tax:0.10, school:"Learned in the kitchen"},
+  {id:"firefighter",icon:"🚒",name:"Firefighter",        pay:260,  tax:0.12, school:"Fire academy + training"},
+  {id:"police",   icon:"👮",  name:"Police Officer",     pay:300,  tax:0.12, school:"Police academy"},
+  {id:"teacher",  icon:"🧑‍🏫", name:"Teacher",            pay:350,  tax:0.12, school:"4 years of college"},
+  {id:"nurse",    icon:"👩‍⚕️", name:"Nurse",              pay:410,  tax:0.15, school:"Nursing school"},
+  {id:"engineer", icon:"👷",  name:"Engineer",           pay:480,  tax:0.15, school:"College + lots of math"},
+  {id:"coder",    icon:"🧑‍💻", name:"Software Developer", pay:560,  tax:0.18, school:"Computer science + coding"},
+  {id:"business", icon:"💼",  name:"Business Owner",      pay:660,  tax:0.18, school:"Runs their own company"},
+  {id:"lawyer",   icon:"👩‍⚖️", name:"Lawyer",             pay:780,  tax:0.20, school:"College + law school"},
+  {id:"doctor",   icon:"🩺",  name:"Doctor",             pay:950,  tax:0.22, school:"10+ years of school"},
+  {id:"astronaut",icon:"🚀",  name:"Astronaut",          pay:1200, tax:0.24, school:"Top science + years of training"},
+].map(j=>({...j, bills: billsFor(j.pay)}));
 const BILL_ICON = {Home:"🏠",Food:"🍎",Phone:"📱",Other:"🚌"};
 const jobTax   = (j) => Math.round(j.pay * (j.tax||0));               // tax taken out first
 const jobBills = (j) => Object.values(j.bills).reduce((a,b)=>a+b,0);   // total bills
 const jobSave  = (j) => j.pay - jobTax(j) - jobBills(j);              // left to invest each payday
-// Promotions get HARDER as you climb — later jobs need more paychecks invested.
-// Indexed by current jobIndex (0=food→cashier … 5=business→doctor).
-const PROMO_REQ = [2, 2, 3, 3, 4, 4];
-const promoNeed = (idx) => PROMO_REQ[idx] ?? 4;
+// Promotions get HARDER as you climb: 2 for the first rungs, then 3, 4, 5…
+const promoNeed = (idx) => Math.min(5, 2 + Math.floor(idx/3));
+const PAY_DAYS = 14;   // a fresh paycheck is ready every 2 weeks
 // Surprise life events — a random one may hit on payday, eating into savings.
 // This teaches WHY you keep an emergency fund: life throws curveballs!
 const LIFE_EVENTS = [
@@ -425,8 +437,8 @@ const LIFE_EVENTS = [
   {emoji:"👟", text:"Outgrew your shoes!"},
 ];
 // Old saves stored {job:'doctor',...}; new shape is index-based. Reset those.
-const freshCareer = () => ({jobIndex:0, period:0, investsAtJob:0, awaitingInvest:false, awaitingAmt:0, lastEvent:null, emergency:0, totalSaved:0});
-const migrateCareer = (c) => (c && typeof c.jobIndex==="number") ? c : freshCareer();
+const freshCareer = () => ({jobIndex:0, period:0, investsAtJob:0, awaitingInvest:false, awaitingAmt:0, lastEvent:null, lastPayday:"", emergency:0, totalSaved:0});
+const migrateCareer = (c) => (c && typeof c.jobIndex==="number") ? {...c, jobIndex:Math.min(c.jobIndex, JOBS.length-1)} : freshCareer();
 
 // ─── Challenge Rounds: a harder "Round 2" for each finished lesson ──────────
 // These questions are tougher and deliberately CONNECT to earlier lessons, so
@@ -1704,6 +1716,9 @@ function KidDash({user,savedState,onLogout}){
   const curTax   = jobTax(curJob);
   const curBills = jobBills(curJob);
   const curSave  = jobSave(curJob);                      // paycheck minus tax & bills = what you can invest
+  // Paydays come on a real every-2-weeks rhythm (the first one is ready now).
+  const payReady = !career.awaitingInvest && (!career.lastPayday || daysSince(career.lastPayday) >= PAY_DAYS);
+  const payInDays= Math.max(0, PAY_DAYS - daysSince(career.lastPayday));
   const chosenEtf = autoInvest?.etf || invPickEtf;       // which ETF savings go into
 
   // 1) Collect a paycheck. Bills come out first (you have to pay them!), a
@@ -1711,6 +1726,7 @@ function KidDash({user,savedState,onLogout}){
   //    lands in your cash to invest.
   const collectPaycheck = () => {
     if(career.awaitingInvest) return;                    // handle the last paycheck first
+    if(career.lastPayday && daysSince(career.lastPayday) < PAY_DAYS) return;   // not due for 2 weeks yet
     let ev=null;                                          // maybe a surprise expense (not on the very first payday)
     if((career.period||0) >= 1 && Math.random() < 0.35){
       const e = LIFE_EVENTS[Math.floor(Math.random()*LIFE_EVENTS.length)];
@@ -1725,7 +1741,7 @@ function KidDash({user,savedState,onLogout}){
     setCash(c=>c+kept);                                  // net savings after tax, bills (and any uncovered surprise)
     setCoins(c=>c+10); setXp(x=>x+20); fx("reward",25);
     setInvAmt(null);
-    setCareer(cur=>({...cur, period:(cur.period||0)+1, awaitingInvest:true, awaitingAmt:kept, lastEvent: ev?{...ev,covered,remainder}:null, emergency:(cur.emergency||0)-covered, totalSaved:(cur.totalSaved||0)+kept}));
+    setCareer(cur=>({...cur, period:(cur.period||0)+1, awaitingInvest:true, awaitingAmt:kept, lastPayday:new Date().toDateString(), lastEvent: ev?{...ev,covered,remainder}:null, emergency:(cur.emergency||0)-covered, totalSaved:(cur.totalSaved||0)+kept}));
     if(ev){
       if(covered>=ev.cost)      setTaskCelebrate({emoji:"🛟",title:"Emergency fund to the rescue!",label:`${ev.emoji} ${ev.text} cost ${fs$(ev.cost)} — but your emergency fund covered ALL of it, so your savings are safe! THIS is why you build a fund. 💪`});
       else if(covered>0)        setTaskCelebrate({emoji:ev.emoji,title:`😮 Surprise! ${ev.text}`,label:`It cost ${fs$(ev.cost)}. Your emergency fund covered ${fs$(covered)}, so only ${fs$(remainder)} came out of savings. See how the fund helps? Build it up more! 🛟`});
@@ -2433,6 +2449,23 @@ function KidDash({user,savedState,onLogout}){
                 </div>
               </div>
             )}
+            {/* Money Life nudge — the can't-miss shortcut to the payday loop */}
+            {(()=>{
+              const jumpMM=()=>{ setMoreView("Invest"); setNav("More"); setMoreOpen(false); };
+              const act = career.awaitingInvest; const ready = payReady;
+              const hot = act||ready; const waiting = career.awaitingAmt ?? curSave;
+              return(
+                <div onClick={jumpMM} style={{background:hot?"linear-gradient(135deg,#3b82f6,#2563eb)":"rgba(255,255,255,.05)",border:hot?"none":"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:"13px 15px",marginBottom:12,display:"flex",alignItems:"center",gap:12,cursor:"pointer",boxShadow:hot?"0 5px 18px rgba(59,130,246,.4)":"none",animation:hot?"tapPulse 1.8s ease-in-out infinite":"none"}}>
+                  <span style={{fontSize:28,flexShrink:0}}>{act?"📈":ready?"💰":curJob.icon}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff"}}>{act?`Invest your ${fs$(waiting)} savings!`:ready?`Payday! Collect ${fs$(curJob.pay)} 💼`:`${curJob.name} · Money Machine`}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:hot?"rgba(255,255,255,.9)":"rgba(255,255,255,.5)",marginTop:1}}>{act?"Tap to invest it and grow your money 🌱":ready?"Your paycheck is ready — tap to open it":`Next payday in ${payInDays} day${payInDays===1?"":"s"} · tap to visit`}</div>
+                  </div>
+                  <span style={{fontSize:13,fontWeight:800,color:"#fff",background:"rgba(0,0,0,.18)",padding:"5px 11px",borderRadius:100,flexShrink:0}}>{hot?"Go →":"→"}</span>
+                </div>
+              );
+            })()}
+
             {/* Pet mascot — feature 7 */}
             <div className="pet-card" style={{borderColor:`${theme.accent}44`,background:`${theme.card}`}}>
               <div className="pet-em">{petState}</div>
@@ -3455,12 +3488,19 @@ function KidDash({user,savedState,onLogout}){
 
                 {/* ── STEP 1 · PAYDAY & BUDGET ── */}
                 <div style={{fontSize:13,fontWeight:800,color:"#fbbf24",marginBottom:9}}>💼 Step 1 · Payday &amp; bills</div>
-                {!career.awaitingInvest?(
+                {career.awaitingInvest?null:payReady?(
                   <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.14),rgba(245,158,11,.05))",border:"1px solid rgba(245,158,11,.3)",borderRadius:16,padding:15,marginBottom:18}}>
                     <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.6)",textAlign:"center",marginBottom:11,lineHeight:1.5}}>Time to get paid! Your {curJob.name} paycheck is <strong style={{color:"#fff"}}>{fs$(curJob.pay)}</strong>, but tax takes <strong style={{color:"#fca5a5"}}>{fs$(curTax)}</strong> and bills take <strong style={{color:"#fca5a5"}}>{fs$(curBills)}</strong> — you'll keep <strong style={{color:"#86efac"}}>{fs$(curSave)}</strong> to invest.</div>
                     <button onClick={collectPaycheck} style={{width:"100%",padding:14,borderRadius:13,border:"none",background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#fff",fontFamily:"var(--fd)",fontSize:16,cursor:"pointer",boxShadow:"0 6px 18px rgba(245,158,11,.4)"}}>💰 Collect payday #{(career.period||0)+1}</button>
                   </div>
                 ):(
+                  <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:15,marginBottom:18,textAlign:"center"}}>
+                    <div style={{fontSize:30,marginBottom:4}}>📅</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>Next payday in {payInDays} day{payInDays===1?"":"s"}</div>
+                    <div style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,.5)",marginTop:4,lineHeight:1.5}}>You get paid every 2 weeks, just like real life. Come back then to collect your {fs$(curJob.pay)} {curJob.name} paycheck! Meanwhile, your investments keep growing 🌱</div>
+                  </div>
+                )}
+                {career.awaitingInvest&&(
                   <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:15,marginBottom:18}}>
                     <div style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,.5)",marginBottom:8}}>🧾 YOUR BUDGET THIS PAYDAY</div>
                     <div style={{display:"flex",justifyContent:"space-between",fontFamily:"var(--fd)",fontSize:15,color:"#86efac",marginBottom:6}}><span>{curJob.icon} Paycheck</span><span>+{fs$(curJob.pay)}</span></div>
