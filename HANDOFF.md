@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-09-21
 **Repo:** `github.com/Ultrabull/toybox-trader`
-**Live site:** https://toyboxtrader.com (also `toybox-trader.pages.dev`)
+**Live site:** https://toybox-trader.pages.dev  _(custom domain toyboxtrader.com dropped 2026-10 — Pages URL only)_
 **Owner contact / auth email:** the Apple private-relay address on the account
 
 This is the single source of truth for how the whole project is built, hosted,
@@ -36,7 +36,7 @@ offline-first, bold/simple kid language, no real-money movement.
    OWNER  ⇄  Claude (AI)  ──git commits──▶  GitHub: Ultrabull/toybox-trader
                                                   │  (push to main)
                                                   ▼
-                                  ☁️ CLOUDFLARE PAGES ──serves──▶ toyboxtrader.com
+                                  ☁️ CLOUDFLARE PAGES ──serves──▶ toybox-trader.pages.dev
                                   • build: `npm run build` → dist/
                                   • backend: functions/api/*.js (Pages Functions)
                                        │            │              │
@@ -194,7 +194,7 @@ Toybox Plus (gated in `openLesson`). Challenge Rounds re-pay the lesson's cash.
 | `EMAIL_FROM` / `SUPPORT_EMAIL` | bug-report email | set (support = toyboxtrader.support@gmail.com) |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | web push | optional |
 
-Check live status anytime: **`GET https://toyboxtrader.com/api/health`** →
+Check live status anytime: **`GET https://toybox-trader.pages.dev/api/health`** →
 returns which vars are set as booleans.
 
 **GitHub repo secrets** (Settings → Secrets → Actions) — power the Actions:
@@ -283,8 +283,8 @@ against `npm run preview`:
 
 ## 11. Quick reference
 
-- **Live:** https://toyboxtrader.com · Pages: `toybox-trader.pages.dev`
-- **Health check:** https://toyboxtrader.com/api/health
+- **Live:** https://toybox-trader.pages.dev (Pages URL — no custom domain)
+- **Health check:** https://toybox-trader.pages.dev/api/health
 - **Deploy:** push to `main` → Cloudflare Pages
 - **The app:** `ToyboxFull.tsx` (search symbols; it's one file)
 - **Support inbox:** toyboxtrader.support@gmail.com
