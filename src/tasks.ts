@@ -18,6 +18,8 @@ export type Task = {
   createdAt: number;
   doneAt?: number;             // when kid marked "I did it"
   lastDone?: string;           // date string of last completion (for recurring reset)
+  mission?: number;            // Brave (Confidence) mission id, 1-10
+  brave?: { before: number; after: number; helped: string; tried: boolean; smaller: boolean };
 };
 export type StoreItem = { id: string; name: string; emoji: string; cost: number };
 export type Claim = { id: string; kidId: string; itemName: string; emoji: string; cost: number; at: number; given?: boolean };
@@ -29,6 +31,7 @@ export const CATS = [
   { id: "family", icon: "👵", label: "Help Family" },
   { id: "project", icon: "🎨", label: "Project" },
   { id: "kindness", icon: "💛", label: "Kindness" },
+  { id: "brave", icon: "🦁", label: "Brave" },
 ];
 export const catOf = (id: string) => CATS.find((c) => c.id === id) || CATS[2];
 
@@ -142,3 +145,35 @@ export function applyRecurringResets(tasks: Task[]): Task[] {
   });
   return changed ? out : tasks;
 }
+
+// ── Brave Missions (Confidence track) ─────────────────────────────────────────
+// Real-world practice, parent checks it off. Each mission is done 3 times to
+// master it (repetition builds confidence). "Tried it" earns the same as "Did it".
+// No voice, no photos, nothing typed by the kid — only taps.
+export type Mission = { id: number; level: 1 | 2 | 3; icon: string; title: string; kid: string; teen: string; smaller: string; parent: string };
+export const BRAVE_LEVELS = [
+  { level: 1, name: "Warm-Up", icon: "🌱" },
+  { level: 2, name: "Getting Braver", icon: "🔥" },
+  { level: 3, name: "Big Brave", icon: "🦁" },
+];
+export const MISSIONS: Mission[] = [
+  { id: 1, level: 1, icon: "👋", title: "Say Hi First", kid: "Say hi first to someone today — a neighbor, a cashier, or a classmate. Smile and say hi!", teen: "Start a short chat with someone new — two or three lines is enough.", smaller: "Wave or smile at someone first.", parent: "Say: \"I saw you go first. That took guts.\"" },
+  { id: 2, level: 1, icon: "💬", title: "Real Compliment", kid: "Give one real compliment, like \"You were really patient with your sister.\"", teen: "Compliment someone you don't know well.", smaller: "Write the compliment on a note instead.", parent: "Ask: \"How did they react?\"" },
+  { id: 3, level: 1, icon: "💛", title: "Name Your Feeling", kid: "At dinner, share one feeling: \"I felt ___ when ___.\"", teen: "Share the feeling and what you did about it.", smaller: "Point to an emoji that matches your feeling.", parent: "Share one feeling too. Then just listen — no fixing." },
+  { id: 4, level: 2, icon: "🍔", title: "Order for Yourself", kid: "Order your own food, or ask a store worker for help.", teen: "Call a store or place with a question.", smaller: "Your grown-up stands next to you; you say one word.", parent: "Stay quiet and let them do it. Don't rescue." },
+  { id: 5, level: 2, icon: "✋", title: "Ask One Question", kid: "Raise your hand once in class, or ask a teacher or coach a question.", teen: "Email a teacher or coach a question.", smaller: "Ask one-on-one after class.", parent: "Say: \"Asking means you're learning.\"" },
+  { id: 6, level: 2, icon: "🧗", title: "Try Something Hard", kid: "Try something new or tricky for 10 minutes.", teen: "Try something you might fail at, in front of someone.", smaller: "Try it for just 5 minutes.", parent: "Praise the effort: \"You kept going.\"" },
+  { id: 7, level: 2, icon: "🤝", title: "Join In", kid: "Ask to join a game, or invite a kid who's sitting alone.", teen: "Invite someone new to lunch or a group.", smaller: "Sit near the group first.", parent: "Ask: \"What helped you walk over?\"" },
+  { id: 8, level: 3, icon: "🛡️", title: "Say No Kindly", kid: "Say \"No thanks, I don't want to\" when you mean it. If someone is being teased, stand next to them or get a grown-up.", teen: "Stand with someone being teased, or get an adult. Never fight.", smaller: "Practice \"No thanks\" at home 3 times.", parent: "Say: \"Your no matters.\"" },
+  { id: 9, level: 3, icon: "🔧", title: "Own a Mistake", kid: "Tell someone about a mistake and how you'll fix it.", teen: "Own a mistake and fix it without being asked.", smaller: "Tell your grown-up first.", parent: "Say: \"Everyone messes up. Fixing it is the brave part.\"" },
+  { id: 10, level: 3, icon: "🎤", title: "Stand Tall Talk", kid: "Give a 1-minute talk to your family about something you love. Stand tall, loud voice!", teen: "Give a 2-minute talk to family or a club.", smaller: "Talk for 30 seconds, sitting down.", parent: "Make it a moment — clap, and celebrate the Confidence badge!" },
+];
+export const MISSION_REPS = 3;                    // do it 3 times to master
+export const braveCoins = (rep: number) => [15, 10, 5][Math.min(rep, 2)]; // small, fades with repeats
+export const BRAVE_HELPS = [
+  { id: "breathe", icon: "🌬️", label: "Belly breathing" },
+  { id: "sentence", icon: "💪", label: "My brave sentence" },
+  { id: "practice", icon: "🎭", label: "Practicing first" },
+  { id: "someone", icon: "🧑‍🤝‍🧑", label: "Someone with me" },
+];
+export const missionOf = (id?: number) => MISSIONS.find((m) => m.id === id);
