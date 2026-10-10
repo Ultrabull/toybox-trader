@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { apiUrl } from "./src/api";
 import Landing from "./src/Landing";
 import { buildInsight, CURRICULUM } from "./src/insight.mjs";
-import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS, loadSavings, saveSavings, loadAllowance, saveAllowance, loadFamily, saveFamily, loadGifts, saveGifts, MISSIONS, BRAVE_LEVELS, MISSION_REPS, braveCoins, BRAVE_HELPS, missionOf } from "./src/tasks";
+import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS, loadSavings, saveSavings, loadAllowance, saveAllowance, loadFamily, saveFamily, loadGifts, saveGifts, MISSIONS as BRAVE_MISSIONS, BRAVE_LEVELS, MISSION_REPS, braveCoins, BRAVE_HELPS, missionOf } from "./src/tasks";
 
 // ─── Constants ─────────────────────────────────────
 const AVATARS = ["🚀","🦁","⚡","🐉","🦊","🐼","🦋","🎮","🏆","🌟","🦅","🐯","🐬","🦄","🐸","🎸","🧙","🎯","🐺","🦈"];
@@ -1661,7 +1661,7 @@ function KidDash({user,savedState,onLogout}){
   const braveFor=(id)=>myTasks.filter(t=>t.mission===id);
   const braveReps=(id)=>braveFor(id).filter(t=>t.status==="approved"||t.status==="done").length;
   const braveSent=(id)=>braveFor(id).length;
-  const levelUnlocked=(lvl)=>lvl===1||MISSIONS.filter(m=>m.level===lvl-1).every(m=>braveSent(m.id)>0);
+  const levelUnlocked=(lvl)=>lvl===1||BRAVE_MISSIONS.filter(m=>m.level===lvl-1).every(m=>braveSent(m.id)>0);
   const submitBrave=(m)=>{
     const f=braveForm; const rep=braveFor(m.id).length;
     const t={id:uid(),kidId:user?.id,title:`${m.icon} Brave #${m.id}: ${m.title} (${f.tried?"tried it":"did it"}${f.smaller?", smaller step":""})`,cat:"brave",reward:{type:"coins",coins:braveCoins(rep)},recurring:"once",status:"pending",createdAt:Date.now(),doneAt:Date.now(),mission:m.id,brave:{before:f.before??0,after:f.after??0,helped:f.helped,tried:f.tried,smaller:f.smaller}};
@@ -3008,7 +3008,7 @@ function KidDash({user,savedState,onLogout}){
               const card={background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:14,padding:13,marginBottom:9};
               const btn=(on,c="#7c3aed")=>({padding:"9px 6px",borderRadius:10,border:`1.5px solid ${on?"#fff":"rgba(255,255,255,.15)"}`,background:on?`${c}`:"rgba(255,255,255,.05)",color:"#fff",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"});
               const ready=myTasks.filter(t=>t.cat==="brave"&&t.status==="approved");
-              const mastered=MISSIONS.filter(m=>braveReps(m.id)>=MISSION_REPS).length;
+              const mastered=BRAVE_MISSIONS.filter(m=>braveReps(m.id)>=MISSION_REPS).length;
               const m=missionOf(braveOpen);
               if(m){
                 const f=braveForm; const reps=braveReps(m.id); const waiting=braveFor(m.id).filter(t=>t.status==="pending").length;
@@ -3059,9 +3059,9 @@ function KidDash({user,savedState,onLogout}){
                   <div style={{fontSize:40}}>🦁</div>
                   <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",margin:"4px 0"}}>Brave Missions</div>
                   <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.7)",lineHeight:1.5}}>Do small brave things in real life. Your grown-up checks them off. Do each one {MISSION_REPS} times to master it!</div>
-                  <div style={{fontSize:13,fontWeight:800,color:"#fde68a",marginTop:8}}>⭐ {mastered} / {MISSIONS.length} mastered</div>
+                  <div style={{fontSize:13,fontWeight:800,color:"#fde68a",marginTop:8}}>⭐ {mastered} / {BRAVE_MISSIONS.length} mastered</div>
                 </div>
-                {mastered===MISSIONS.length&&(<div style={{...card,textAlign:"center",background:"rgba(16,185,129,.14)",border:"1px solid rgba(16,185,129,.4)"}}><div style={{fontSize:34}}>🏅</div><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>Confidence Badge earned!</div><div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.7)"}}>You did all 10 Brave Missions. Look how far you've come! 💛</div></div>)}
+                {mastered===BRAVE_MISSIONS.length&&(<div style={{...card,textAlign:"center",background:"rgba(16,185,129,.14)",border:"1px solid rgba(16,185,129,.4)"}}><div style={{fontSize:34}}>🏅</div><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>Confidence Badge earned!</div><div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.7)"}}>You did all 10 Brave Missions. Look how far you've come! 💛</div></div>)}
                 {ready.length>0&&<div style={{fontSize:12,fontWeight:800,color:"#86efac",marginBottom:8}}>🎉 Your grown-up checked these off!</div>}
                 {ready.map(t=>(
                   <div key={t.id} style={{...card,background:"rgba(16,185,129,.12)",border:"1px solid rgba(16,185,129,.4)"}}>
@@ -3075,7 +3075,7 @@ function KidDash({user,savedState,onLogout}){
                   <div key={L.level} style={{marginBottom:14,opacity:open?1:.5}}>
                     <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff",marginBottom:8}}>{L.icon} Level {L.level}: {L.name}{!open&&" 🔒"}</div>
                     {!open&&<div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)",marginBottom:8}}>Try every mission in Level {L.level-1} once to unlock.</div>}
-                    {MISSIONS.filter(x=>x.level===L.level).map(x=>{
+                    {BRAVE_MISSIONS.filter(x=>x.level===L.level).map(x=>{
                       const r=braveReps(x.id);
                       return(
                       <button key={x.id} disabled={!open} onClick={()=>{setBraveOpen(x.id);setBraveForm({before:null,after:null,helped:"",tried:false,smaller:false,step:0});}} style={{...card,width:"100%",display:"flex",alignItems:"center",gap:10,cursor:open?"pointer":"default",textAlign:"left"}}>
