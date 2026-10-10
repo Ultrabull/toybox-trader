@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { apiUrl } from "./src/api";
 import Landing from "./src/Landing";
 import { buildInsight, CURRICULUM } from "./src/insight.mjs";
-import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS, loadSavings, saveSavings, loadAllowance, saveAllowance, loadFamily, saveFamily, loadGifts, saveGifts } from "./src/tasks";
+import { CATS as TASK_CATS, catOf, TEMPLATES, loadTasks, saveTasks, loadStore, saveStore, loadClaims, saveClaims, uid, applyRecurringResets, loadOwed, saveOwed, loadSettings, saveSettings, loadRequests, saveRequests, REQ_CATS, reqCatOf, REQ_SUGGESTIONS, loadSavings, saveSavings, loadAllowance, saveAllowance, loadFamily, saveFamily, loadGifts, saveGifts, MISSIONS, BRAVE_LEVELS, MISSION_REPS, braveCoins, BRAVE_HELPS, missionOf } from "./src/tasks";
 
 // ─── Constants ─────────────────────────────────────
 const AVATARS = ["🚀","🦁","⚡","🐉","🦊","🐼","🦋","🎮","🏆","🌟","🦅","🐯","🐬","🦄","🐸","🎸","🧙","🎯","🐺","🦈"];
@@ -1645,7 +1645,7 @@ function KidDash({user,savedState,onLogout}){
   const clearSavingsGoal = () => { (async()=>{ const sv=await loadSavings(); const saved=sv[user?.id]?.saved||0; if(saved>0) setCoins(c=>c+saved); delete sv[user?.id]; await saveSavings(sv); setSavings(null); })(); };
   useEffect(()=>{ (async()=>{ await refreshTasks(); const g=await loadData(`toybox:choregoal:${user?.id}`); if(g) setChoreGoal(g); })(); },[]);
   // Re-check for parent approvals whenever the Tasks/Together views open.
-  useEffect(()=>{ if(nav==="More"&&(moreView==="Tasks"||moreView==="Together")) refreshTasks(); },[nav,moreView]);
+  useEffect(()=>{ if(nav==="More"&&(moreView==="Tasks"||moreView==="Together"||moreView==="Brave")) refreshTasks(); },[nav,moreView]);
   const myTasks = tasks.filter(t=>t.kidId===user?.id);
   const todoCount = myTasks.filter(t=>t.status==="todo").length;
 
@@ -1653,6 +1653,22 @@ function KidDash({user,savedState,onLogout}){
     const next = tasks.map(t=>t.id===task.id?{...t,status:"pending",doneAt:Date.now()}:t);
     setTasks(next); saveTasks(next); fx("correct",12);
     try{ window.toyboxSync?.notify?.(`✅ ${user?.name||"Your child"} finished a task: "${task.title}". Open Toybox Trader → 👔 Parent to approve it.`); }catch(e){}
+  };
+  // ── Brave Missions (Confidence track) ──
+  const [braveOpen,setBraveOpen]=useState(null);       // mission id being viewed
+  const [braveForm,setBraveForm]=useState({before:null,after:null,helped:"",tried:false,smaller:false,step:0});
+  const isTeen=(Number(user?.age)||10)>=13;
+  const braveFor=(id)=>myTasks.filter(t=>t.mission===id);
+  const braveReps=(id)=>braveFor(id).filter(t=>t.status==="approved"||t.status==="done").length;
+  const braveSent=(id)=>braveFor(id).length;
+  const levelUnlocked=(lvl)=>lvl===1||MISSIONS.filter(m=>m.level===lvl-1).every(m=>braveSent(m.id)>0);
+  const submitBrave=(m)=>{
+    const f=braveForm; const rep=braveFor(m.id).length;
+    const t={id:uid(),kidId:user?.id,title:`${m.icon} Brave #${m.id}: ${m.title} (${f.tried?"tried it":"did it"}${f.smaller?", smaller step":""})`,cat:"brave",reward:{type:"coins",coins:braveCoins(rep)},recurring:"once",status:"pending",createdAt:Date.now(),doneAt:Date.now(),mission:m.id,brave:{before:f.before??0,after:f.after??0,helped:f.helped,tried:f.tried,smaller:f.smaller}};
+    const next=[t,...tasks]; setTasks(next); saveTasks(next); fx("reward",25);
+    try{ window.toyboxSync?.notify?.(`🦁 ${user?.name||"Your child"} did a Brave Mission: "${m.title}". Open Toybox Trader → 👔 Parent to cheer them on.`); }catch(e){}
+    setBraveForm({before:null,after:null,helped:"",tried:false,smaller:false,step:0}); setBraveOpen(null);
+    setTaskCelebrate({emoji:"🦁",title:"That was brave!",label:"Your grown-up will check it off. Proud of you! 💛"});
   };
   const collectTask = (task) => {
     const next = tasks.map(t=>t.id===task.id?{...t,status:"done",lastDone:new Date().toDateString()}:t);
@@ -2367,6 +2383,7 @@ function KidDash({user,savedState,onLogout}){
     {title:"💰 Money & Tasks",items:[
       {id:"Invest",  icon:"🏦",label:"Money Machine"},
       {id:"Tasks",   icon:"✅",label:"My Tasks"},
+      {id:"Brave",   icon:"🦁",label:"Brave"},
       ...(ttEnabled?[{id:"Together",icon:"💛",label:"Together"}]:[]),
       {id:"Shop",    icon:"🛍️",label:"Shop"},
       {id:"Orders",  icon:"⏳",label:"Orders"},
@@ -2984,6 +3001,93 @@ function KidDash({user,savedState,onLogout}){
                 {doneList.length>0&&<div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.35)",textAlign:"center",marginTop:12}}>✅ {doneList.length} task{doneList.length>1?"s":""} finished{doneList.some(t=>t.recurring!=="once")?" — daily/weekly ones come back!":""}</div>}
               </div>
               );
+            })()}
+
+            {/* BRAVE MISSIONS — Confidence track (real-world practice, parent checks it off) */}
+            {moreView==="Brave"&&(()=>{
+              const card={background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.12)",borderRadius:14,padding:13,marginBottom:9};
+              const btn=(on,c="#7c3aed")=>({padding:"9px 6px",borderRadius:10,border:`1.5px solid ${on?"#fff":"rgba(255,255,255,.15)"}`,background:on?`${c}`:"rgba(255,255,255,.05)",color:"#fff",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"});
+              const ready=myTasks.filter(t=>t.cat==="brave"&&t.status==="approved");
+              const mastered=MISSIONS.filter(m=>braveReps(m.id)>=MISSION_REPS).length;
+              const m=missionOf(braveOpen);
+              if(m){
+                const f=braveForm; const reps=braveReps(m.id); const waiting=braveFor(m.id).filter(t=>t.status==="pending").length;
+                const meter=(key,label)=>(
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,.7)",marginBottom:6}}>{label}</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:5}}>
+                      {[0,2,4,6,8,10].map(n=>(<button key={n} onClick={()=>setBraveForm({...f,[key]:n})} style={btn(f[key]===n,n<=3?"#10b981":n<=6?"#f59e0b":"#ef4444")}>{n}</button>))}
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:10,fontWeight:700,color:"rgba(255,255,255,.4)",marginTop:3}}><span>😌 calm</span><span>😰 very worried</span></div>
+                  </div>);
+                return(
+                <div>
+                  <button onClick={()=>{setBraveOpen(null);setBraveForm({before:null,after:null,helped:"",tried:false,smaller:false,step:0});}} style={{background:"none",border:"none",color:"rgba(255,255,255,.55)",fontSize:13,fontWeight:800,cursor:"pointer",marginBottom:10,padding:0}}>← All missions</button>
+                  <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.18),rgba(239,68,68,.08))",border:"1px solid rgba(245,158,11,.35)",borderRadius:16,padding:16,marginBottom:12}}>
+                    <div style={{fontSize:36}}>{m.icon}</div>
+                    <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",margin:"4px 0 6px"}}>Mission {m.id}: {m.title}</div>
+                    <div style={{fontSize:14,fontWeight:700,color:"#fff",lineHeight:1.5}}>{f.smaller?m.smaller:(isTeen?m.teen:m.kid)}</div>
+                    <div style={{fontSize:11,fontWeight:800,color:"#fde68a",marginTop:8}}>{"⭐".repeat(Math.min(reps,MISSION_REPS))}{"☆".repeat(Math.max(0,MISSION_REPS-reps))} Do it {MISSION_REPS} times to master it{waiting>0?` · ⏳ ${waiting} waiting for your grown-up`:""}</div>
+                    <button onClick={()=>setBraveForm({...f,smaller:!f.smaller})} style={{marginTop:10,background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",borderRadius:100,padding:"6px 12px",color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer"}}>{f.smaller?"↩ Back to the full mission":"🐾 Too big? Try a smaller step"}</button>
+                  </div>
+                  <div style={{...card,background:"rgba(124,58,237,.1)",border:"1px solid rgba(124,58,237,.3)"}}>
+                    <div style={{fontFamily:"var(--fd)",fontSize:14,color:"#fff",marginBottom:6}}>🧰 Get ready first</div>
+                    <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.75)",lineHeight:1.7}}>🎭 Practice it at home with your grown-up<br/>💪 Say your brave sentence: <strong style={{color:"#fff"}}>“I can do hard things.”</strong><br/>🌬️ Belly breathing: smell the flower (in)… blow out the candle (out). 3 times!<br/>🦋 Butterflies in your tummy are normal — they mean you're about to be brave.</div>
+                  </div>
+                  <div style={card}>
+                    {meter("before","Before: how worried do you feel? (0–10)")}
+                    <div style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,.7)",marginBottom:6}}>How did it go?</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:12}}>
+                      <button onClick={()=>setBraveForm({...f,tried:false,step:1})} style={btn(f.step===1&&!f.tried,"#10b981")}>✅ I did it!</button>
+                      <button onClick={()=>setBraveForm({...f,tried:true,step:1})} style={btn(f.step===1&&f.tried,"#7c3aed")}>💪 I tried it!</button>
+                    </div>
+                    {f.step===1&&(<>
+                      <div style={{fontSize:11,fontWeight:800,color:"#86efac",marginBottom:10}}>{f.tried?"Trying counts just as much as doing. That's real bravery! 💛":"Amazing! 🎉"}</div>
+                      {meter("after","After: how worried do you feel now?")}
+                      <div style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,.7)",marginBottom:6}}>What helped you be brave?</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:12}}>
+                        {BRAVE_HELPS.map(h=>(<button key={h.id} onClick={()=>setBraveForm({...f,helped:h.id})} style={btn(f.helped===h.id,"#0ea5e9")}>{h.icon} {h.label}</button>))}
+                      </div>
+                      <button onClick={()=>submitBrave(m)} style={{width:"100%",padding:12,borderRadius:12,border:"none",background:"linear-gradient(135deg,#f59e0b,#f97316)",color:"#fff",fontFamily:"var(--fd)",fontSize:15,cursor:"pointer"}}>🦁 Send to my grown-up</button>
+                    </>)}
+                  </div>
+                </div>);
+              }
+              return(
+              <div>
+                <div style={{background:"linear-gradient(135deg,rgba(245,158,11,.2),rgba(239,68,68,.08))",border:"1px solid rgba(245,158,11,.3)",borderRadius:"var(--rl)",padding:18,textAlign:"center",marginBottom:14}}>
+                  <div style={{fontSize:40}}>🦁</div>
+                  <div style={{fontFamily:"var(--fd)",fontSize:20,color:"#fff",margin:"4px 0"}}>Brave Missions</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.7)",lineHeight:1.5}}>Do small brave things in real life. Your grown-up checks them off. Do each one {MISSION_REPS} times to master it!</div>
+                  <div style={{fontSize:13,fontWeight:800,color:"#fde68a",marginTop:8}}>⭐ {mastered} / {MISSIONS.length} mastered</div>
+                </div>
+                {mastered===MISSIONS.length&&(<div style={{...card,textAlign:"center",background:"rgba(16,185,129,.14)",border:"1px solid rgba(16,185,129,.4)"}}><div style={{fontSize:34}}>🏅</div><div style={{fontFamily:"var(--fd)",fontSize:16,color:"#fff"}}>Confidence Badge earned!</div><div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.7)"}}>You did all 10 Brave Missions. Look how far you've come! 💛</div></div>)}
+                {ready.length>0&&<div style={{fontSize:12,fontWeight:800,color:"#86efac",marginBottom:8}}>🎉 Your grown-up checked these off!</div>}
+                {ready.map(t=>(
+                  <div key={t.id} style={{...card,background:"rgba(16,185,129,.12)",border:"1px solid rgba(16,185,129,.4)"}}>
+                    <div style={{fontSize:14,fontWeight:800,color:"#fff",marginBottom:8}}>{t.title}</div>
+                    <button onClick={()=>collectTask(t)} style={{width:"100%",padding:10,borderRadius:11,border:"none",background:"linear-gradient(135deg,#10b981,#059669)",color:"#fff",fontFamily:"var(--fd)",fontSize:14,cursor:"pointer"}}>🎉 Collect {t.reward.coins} coins</button>
+                  </div>
+                ))}
+                {BRAVE_LEVELS.map(L=>{
+                  const open=levelUnlocked(L.level);
+                  return(
+                  <div key={L.level} style={{marginBottom:14,opacity:open?1:.5}}>
+                    <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fff",marginBottom:8}}>{L.icon} Level {L.level}: {L.name}{!open&&" 🔒"}</div>
+                    {!open&&<div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)",marginBottom:8}}>Try every mission in Level {L.level-1} once to unlock.</div>}
+                    {MISSIONS.filter(x=>x.level===L.level).map(x=>{
+                      const r=braveReps(x.id);
+                      return(
+                      <button key={x.id} disabled={!open} onClick={()=>{setBraveOpen(x.id);setBraveForm({before:null,after:null,helped:"",tried:false,smaller:false,step:0});}} style={{...card,width:"100%",display:"flex",alignItems:"center",gap:10,cursor:open?"pointer":"default",textAlign:"left"}}>
+                        <span style={{fontSize:24}}>{x.icon}</span>
+                        <div style={{flex:1}}><div style={{fontSize:14,fontWeight:800,color:"#fff"}}>{x.title}</div><div style={{fontSize:11,fontWeight:800,color:r>=MISSION_REPS?"#86efac":"#fde68a"}}>{r>=MISSION_REPS?"✓ Mastered!":`${"⭐".repeat(r)}${"☆".repeat(MISSION_REPS-r)}`}</div></div>
+                        <span style={{color:"rgba(255,255,255,.4)",fontSize:18}}>›</span>
+                      </button>);
+                    })}
+                  </div>);
+                })}
+                <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.45)",textAlign:"center",lineHeight:1.5,marginTop:6}}>Feeling really worried a lot? That's okay. Tell a grown-up you trust. 💛</div>
+              </div>);
             })()}
 
             {/* TOGETHER TIME — kids ask a grown-up for time together */}
@@ -4528,10 +4632,16 @@ function ParentDash({kids,onResetKid,onLogout}){
             {pending.length>0&&(
               <div style={{marginBottom:16}}>
                 <div style={{fontFamily:"var(--fd)",fontSize:15,color:"#fde68a",marginBottom:8}}>⏳ Waiting for your OK ({pending.length})</div>
+                {pending.some(t=>t.cat==="brave")&&<div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.5)",lineHeight:1.5,marginBottom:9}}>Brave Missions build everyday confidence. They aren't therapy. If you notice panic, school refusal, or talk of self-harm, talk to your pediatrician or school counselor. Teens can call or text 988.</div>}
                 {pending.map(t=>(
                   <div key={t.id} style={{background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.3)",borderRadius:14,padding:13,marginBottom:9}}>
                     <div style={{fontSize:13,fontWeight:800,color:"#fff",marginBottom:2}}>{catOf(t.cat).icon} {t.title}</div>
                     <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.55)",marginBottom:10}}>{kidName(t.kidId)} says it's done · reward {t.reward.type==="coins"?`🪙 ${t.reward.coins}`:`${t.reward.emoji} ${t.reward.label}`}</div>
+                    {t.cat==="brave"&&(()=>{const bm=missionOf(t.mission);const b=t.brave||{};const h=BRAVE_HELPS.find(x=>x.id===b.helped);return(
+                      <div style={{background:"rgba(124,58,237,.12)",border:"1px solid rgba(124,58,237,.3)",borderRadius:10,padding:"8px 10px",marginBottom:10,fontSize:11,fontWeight:700,color:"rgba(255,255,255,.8)",lineHeight:1.6}}>
+                        🦁 Worry: {b.before??"?"} → {b.after??"?"} (0–10){h?` · helped by ${h.icon} ${h.label}`:""}{b.tried?" · tried it (counts!)":""}<br/>
+                        💬 <strong style={{color:"#fff"}}>Coach tip:</strong> {bm?.parent} Praise the effort, not the result.
+                      </div>);})()}
                     <div style={{display:"flex",gap:8}}>
                       <button onClick={()=>setTaskStatus(t.id,"approved")} style={{flex:1,padding:"9px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#10b981,#059669)",color:"#fff",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>✓ Approve</button>
                       <button onClick={()=>setTaskStatus(t.id,"todo")} style={{flex:1,padding:"9px",borderRadius:10,border:"1px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.6)",fontFamily:"var(--fd)",fontSize:13,cursor:"pointer"}}>↩ Not yet</button>
